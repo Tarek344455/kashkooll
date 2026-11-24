@@ -1,0 +1,85 @@
+{
+  "mcpServers": {
+    "zenrows": {
+      "command": "npx",
+      "args": ["-y", "@zenrows/mcp"],
+      "env": {}
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"],
+      "env": {}
+    },
+    "puppeteer": {
+      "command": "npx",
+      "args": ["-y", "puppeteer-mcp-server"],
+      "env": {}
+    },
+    "firecrawl": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "",
+        "FIRECRAWL_API_URL": ""
+      }
+    },
+    "apify": {
+      "command": "npx",
+      "args": ["-y", "@apify/actors-mcp-server"],
+      "env": {
+        "APIFY_TOKEN": ""
+      }
+    },
+    "jina": {
+      "command": "npx",
+      "args": ["-y", "jina-reader-mcp-server"],
+      "env": {
+        "JINA_API_KEY": ""
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "N:\\spaceship-ai\\projects\\kashkool"],
+      "env": {}
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@beautyfree/modelcontextprotocol-server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": ""
+      }
+    },
+    "youtube-transcript": {
+      "command": "npx",
+      "args": ["-y", "@fabriqa.ai/youtube-transcript-mcp"],
+      "env": {}
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "env": {}
+    },
+    "everything": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything"],
+      "env": {}
+    },
+    "pdf": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-pdf"],
+      "env": {}
+    },
+    "string": {
+      "command": "npx",
+      "args": ["-y", "@usestring/mcp"],
+      "env": {
+        "STRING_API_KEY": ""
+      }
+    },
+    "fetch": {
+      "command": "npx",
+      "args": ["-y", "mcp-fetch-server"],
+      "env": {}
+    }
+  }
+}

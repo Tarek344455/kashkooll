@@ -1,0 +1,157 @@
+# Kashkool Cognitive MCP Client - Docker Compose
+# Supports development, production, and testing environments
+
+version: '3.8'
+
+services:
+  # ==================== MAIN APPLICATION ====================
+  kashkool-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ${BUILD_TARGET:-production}
+    container_name: kashkool-mcp
+    ports:
+      - "8000:8000"
+    environment:
+      - KASHKOOL_LLM_PROVIDER=${LLM_PROVIDER:-demo}
+      - KASHKOOL_LLM_MODEL=${LLM_MODEL:-gpt-4}
+      - KASHKOOL_LLM_API_KEY=${LLM_API_KEY:-}
+      - KASHKOOL_LLM_BASE_URL=${LLM_BASE_URL:-}
+      - KASHKOOL_LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.7}
+      - KASHKOOL_PERSISTENCE_BACKEND=${PERSISTENCE_BACKEND:-sqlite}
+      - KASHKOOL_PERSISTENCE_PATH=${PERSISTENCE_PATH:-/app/cognitive_data}
+      - KASHKOOL_API_HOST=0.0.0.0
+      - KASHKOOL_API_PORT=8000
+      - KASHKOOL_API_WORKERS=${API_WORKERS:-4}
+      - KASHKOOL_ENVIRONMENT=${ENVIRONMENT:-production}
+      - KASHKOOL_DEBUG=${DEBUG:-false}
+      # MCP Server API Keys
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+      - JINA_API_KEY=${JINA_API_KEY:-}
+      - APIFY_TOKEN=${APIFY_TOKEN:-}
+      - STRING_API_KEY=${STRING_API_KEY:-}
+    volumes:
+      - cognitive_data:/app/cognitive_data
+      - logs:/app/logs
+      - ./config.json:/app/config.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - redis
+    networks:
+      - kashkool-network
+
+  # ==================== REDIS FOR PERSISTENCE ====================
+  redis:
+    image: redis:7-alpine
+    container_name: kashkool-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - kashkool-network
+
+  # ==================== OPTIONAL: OLLAMA FOR LOCAL LLM ====================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: kashkool-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+    profiles:
+      - ollama
+    networks:
+      - kashkool-network
+
+  # ==================== OPTIONAL: PLAYWRIGHT FOR BROWSER AUTOMATION ====================
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.40.0-focal
+    container_name: kashkool-playwright
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./playwright-scripts:/scripts
+    command: sleep infinity
+    restart: unless-stopped
+    profiles:
+      - playwright
+    networks:
+      - kashkool-network
+
+  # ==================== MONITORING ====================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: kashkool-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    networks:
+      - kashkool-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: kashkool-grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    networks:
+      - kashkool-network
+
+# ==================== VOLUMES ====================
+volumes:
+  cognitive_data:
+    driver: local
+  redis_data:
+    driver: local
+  ollama_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  logs:
+    driver: local
+
+# ==================== NETWORKS ====================
+networks:
+  kashkool-network:
+    driver: bridge
+    name: kashkool-network

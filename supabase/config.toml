@@ -1,0 +1,54 @@
+# Supabase local/project configuration for Kashkool.
+# Apply migrations: supabase db push   (or: supabase db reset for local)
+
+project_id = "kashkool"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:8090"
+additional_redirect_urls = ["http://127.0.0.1:8090", "http://localhost:3000"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = false
+enable_confirmations = false
+
+[auth.sms]
+enable_signup = true
+# Egyptian numbers are normalised to +20... in the app before OTP is requested.
+# An SMS provider (Twilio/MessageBird/vonage) must be configured in the
+# Supabase dashboard for live OTP delivery. Without it the app surfaces an
+# explicit "not configured" error — never a fake code.
+enable_confirmations = true
+template = "Kashkool verification code: {{ .Code }}"
+
+[auth.sms.automated_recovery]
+enabled = false
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = true
+port = 54323
+
+[edge_runtime]
+enabled = true
+policy = "oneshot"
+inspector_port = 8083
+
+[analytics]
+enabled = false

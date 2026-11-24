@@ -1,0 +1,13 @@
+{
+ "id": "P026",
+ "buys": true,
+ "purchases_first_month": 1,
+ "reason_code": "need",
+ "reason": "أحتاج نظام يخلصني من التسوية اليدوية واللي بتاخد مني ساعات كل ليلة",
+ "objection": "EGP 3,000/month is too expensive for my center size",
+ "would_change_my_mind": "لو احتجت أتوسع وأفتح فروع تانية",
+ "price_too_cheap": 900.0,
+ "price_cheap": 1800.0,
+ "price_expensive": 3900.0,
+ "price_too_expensive": 6000.0
+}

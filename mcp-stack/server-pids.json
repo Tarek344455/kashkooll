@@ -1,0 +1,58 @@
+[
+  {
+    "name": "zenrows",
+    "pid": 12960
+  },
+  {
+    "name": "playwright",
+    "pid": 14128
+  },
+  {
+    "name": "puppeteer",
+    "pid": 13116
+  },
+  {
+    "name": "firecrawl",
+    "pid": 12444
+  },
+  {
+    "name": "apify",
+    "pid": 13888
+  },
+  {
+    "name": "jina",
+    "pid": 9316
+  },
+  {
+    "name": "filesystem",
+    "pid": 8464
+  },
+  {
+    "name": "github",
+    "pid": 13936
+  },
+  {
+    "name": "youtube-transcript",
+    "pid": 13852
+  },
+  {
+    "name": "sequential-thinking",
+    "pid": 13436
+  },
+  {
+    "name": "everything",
+    "pid": 14236
+  },
+  {
+    "name": "pdf",
+    "pid": 6300
+  },
+  {
+    "name": "string",
+    "pid": 1912
+  },
+  {
+    "name": "fetch",
+    "pid": 2528
+  }
+]

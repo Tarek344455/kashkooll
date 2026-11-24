@@ -1,0 +1,13 @@
+{
+ "id": "P006",
+ "buys": false,
+ "purchases_first_month": 0,
+ "reason_code": "habit",
+ "reason": "معتاد على الواتساب والإكسل من سنين، تغيير النظام هيخلي الشغل يتوقف فترة",
+ "objection": "I tried EduMe/SchoolPlus and it failed when internet went down",
+ "would_change_my_mind": "لو فيه فترة تجريبية حقيقية مع دعم كامل للتدريب ونقل البيانات",
+ "price_too_cheap": 600.0,
+ "price_cheap": 1100.0,
+ "price_expensive": 2500.0,
+ "price_too_expensive": 3800.0
+}

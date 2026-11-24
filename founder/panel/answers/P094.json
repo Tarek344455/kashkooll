@@ -1,0 +1,13 @@
+{
+ "id": "P094",
+ "buys": true,
+ "purchases_first_month": 1,
+ "reason_code": "quality",
+ "reason": "الإنقاذ الأكاديمي للطلاب حاجة مفيش حد بيعملها، ده يميزني عن المنافسين",
+ "objection": "Instapay/Fawry integration - what if it breaks during settlement?",
+ "would_change_my_mind": "لو شوفت نتائج حقيقية من سناتر تانية استخدمت النظام",
+ "price_too_cheap": 600.0,
+ "price_cheap": 1300.0,
+ "price_expensive": 2800.0,
+ "price_too_expensive": 4300.0
+}

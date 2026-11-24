@@ -1,0 +1,40 @@
+name: Security Analysis
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '30 2 * * 0'
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      # Code scanning (the GitHub Security tab) needs GitHub Code Security on
+      # private repos. Without it the upload step fails, so we keep the SARIF
+      # report as a build artifact instead of failing the whole workflow.
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          upload: never
+      - name: Upload SARIF report
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif
+          path: ${{ runner.temp }}/results/*.sarif
+          if-no-files-found: warn

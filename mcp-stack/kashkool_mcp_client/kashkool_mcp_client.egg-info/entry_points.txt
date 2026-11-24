@@ -1,0 +1,4 @@
+[console_scripts]
+kashkool-mcp = kashkool_mcp_client.cli:cli
+kashkool-mcp-demo = kashkool_mcp_client.__main__:main
+kashkool-mcp-server = kashkool_mcp_client.api_server:main

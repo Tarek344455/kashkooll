@@ -1,0 +1,13 @@
+{
+ "id": "P052",
+ "buys": false,
+ "purchases_first_month": 0,
+ "reason_code": "price",
+ "reason": "2500 جنيه في الشهر غالي أوي على مركز زي بتاعي، هفضل على الإكسل",
+ "objection": "My secretaries are not tech-savvy, training will take weeks",
+ "would_change_my_mind": "لو السعر كان أقل أو فيه باقة مخصصة للمراكز الصغيرة",
+ "price_too_cheap": 600.0,
+ "price_cheap": 1100.0,
+ "price_expensive": 2400.0,
+ "price_too_expensive": 3700.0
+}

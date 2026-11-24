@@ -1,0 +1,97 @@
+{
+ "n": 100,
+ "seed": 42,
+ "customer": {
+  "business": "Kashkool (كشكول) - Autonomous EdTech OS for Egyptian tutoring centers",
+  "target": "Education center owners (مراكز الدروس الخصوصية) and independent teachers in Egypt, ages 28-55, who manage daily operations and feel the pain of manual processes",
+  "where": "Egypt nationwide - Cairo, Alexandria, Delta governorates, Upper Egypt",
+  "age": [
+   28,
+   55
+  ],
+  "segments": [
+   {
+    "name": "Large center owner (3+ branches)",
+    "share": 0.15,
+    "income": [
+     500000,
+     2000000
+    ]
+   },
+   {
+    "name": "Medium center owner (1-2 branches)",
+    "share": 0.35,
+    "income": [
+     200000,
+     500000
+    ]
+   },
+   {
+    "name": "Small center owner (single location)",
+    "share": 0.3,
+    "income": [
+     100000,
+     200000
+    ]
+   },
+   {
+    "name": "Independent teacher/tutor",
+    "share": 0.2,
+    "income": [
+     80000,
+     300000
+    ]
+   }
+  ],
+  "behaviours": [
+   {
+    "name": "WhatsApp/Excel operator",
+    "share": 0.35,
+    "how": "Runs everything on WhatsApp groups, Excel sheets, and cash. Resists new software unless proven."
+   },
+   {
+    "name": "Tried ERP, burned",
+    "share": 0.2,
+    "how": "Bought EduMe/SchoolPlus, hated offline failures and manual settlement. Skeptical of new tools."
+   },
+   {
+    "name": "Growth-hungry modernizer",
+    "share": 0.2,
+    "how": "Actively seeks automation to scale. Willing to pay for proven ROI. Early adopter."
+   },
+   {
+    "name": "Teacher-first entrepreneur",
+    "share": 0.15,
+    "how": "Started as teacher, now owns center. Knows the pain intimately. Values teacher-facing features."
+   },
+   {
+    "name": "Cost-optimizer",
+    "share": 0.1,
+    "how": "Uses Google Forms/Sheets or free tools. Only switches if free or clearly cheaper than current time cost."
+   }
+  ],
+  "objections": [
+   "My center runs fine on WhatsApp and Excel, why change?",
+   "I tried EduMe/SchoolPlus and it failed when internet went down",
+   "EGP 3,000/month is too expensive for my center size",
+   "My secretaries are not tech-savvy, training will take weeks",
+   "What happens if Kashkool shuts down? My data is hostage",
+   "Instapay/Fawry integration - what if it breaks during settlement?",
+   "I need to see it work in a center like mine before I commit",
+   "My teachers will refuse to use another app",
+   "Cash is king - parents pay cash, teachers want cash, why digital wallet?",
+   "What's the guarantee? If settlement is wrong, who pays?"
+  ],
+  "habits": [
+   "You check WhatsApp groups at 6 AM for teacher attendance",
+   "You stay until 11 PM every night doing manual settlement with a calculator",
+   "You've lost money to cash leakage but accept it as 'cost of business'",
+   "You hear parents complain 'my son didn't attend' but have no proof either way",
+   "You've had teachers quit over settlement disputes",
+   "You see competitors opening nearby and worry about losing students",
+   "You get pitched by software salespeople monthly, most are useless",
+   "You trust recommendations from other center owners in your governorate"
+  ]
+ },
+ "pitch": "Kashkool (كشكول) — Autonomous EdTech OS for Egyptian tutoring centers\n\nWhat you get:\n- 0.3-second NFC/QR check-in: Student taps, green light, thermal receipt prints. No typing, no waiting, works offline.\n- 1-tap daily settlement at 11 PM: Open app, tap \"Settle\", every teacher paid correctly. Immutable ledger prevents disputes.\n- Family Wallet: Parents top up via Instapay / Vodafone Cash / Fawry. Auto-reconciled. Zero cash leakage.\n- AI Academic Rescue: Student fails a quiz → auto-generates personalized practice sheet in seconds.\n- Teacher DRM: Your content watermarked, screenshot-blocked, leak-traced. Teachers keep their IP.\n- Super-Admin Radar: Live Egypt heatmap, kill-switches, ghost impersonation. Control everything from one screen.\n\nPrice: EGP 2,500/month per center (all features included). EGP 800/month for independent teachers.\nFree for students and parents.\n\nNo setup fees. 14-day free trial. Onboarding in 10 minutes — we give you NFC tags and thermal printer config."
+}

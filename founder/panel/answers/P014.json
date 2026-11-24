@@ -1,0 +1,13 @@
+{
+ "id": "P014",
+ "buys": false,
+ "purchases_first_month": 0,
+ "reason_code": "trust",
+ "reason": "جربت أنظمة قبل كده ووقعت في مشاكل لما النت قطع، مش هخاطر تاني",
+ "objection": "My secretaries are not tech-savvy, training will take weeks",
+ "would_change_my_mind": "لو فيه ضمانة استرداد فلوس لو النظام مش شغال، أو لو شوفته شغال في مركز زيّ بتاعي",
+ "price_too_cheap": 500.0,
+ "price_cheap": 900.0,
+ "price_expensive": 2000.0,
+ "price_too_expensive": 3000.0
+}

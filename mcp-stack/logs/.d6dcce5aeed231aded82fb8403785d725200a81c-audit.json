@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "N:\\spaceship-ai\\projects\\kashkool\\mcp-stack\\logs\\.d6dcce5aeed231aded82fb8403785d725200a81c-audit.json",
+    "files": [
+        {
+            "date": 1795370818668,
+            "name": "N:\\spaceship-ai\\projects\\kashkool\\mcp-stack\\logs\\mcp-puppeteer-2026-11-22.log",
+            "hash": "493f9390bf33a3138f20609ed1ca803f89bea161d91979bbf19bf69ad6e53a14"
+        }
+    ],
+    "hashType": "sha256"
+}

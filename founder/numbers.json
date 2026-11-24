@@ -1,0 +1,31 @@
+{
+  "business": "Kashkool (كشكول)",
+  "unit": "center-month",
+  "price": 2500,
+  "variable": [
+    {"label": "Supabase/Edge Functions", "cost": 150},
+    {"label": "Spaceship AI Router (Port 4500)", "cost": 80},
+    {"label": "Payment gateway fees (Instapay/Fawry/Vodafone Cash)", "cost": 120},
+    {"label": "NFC tags & thermal printer supplies (amortized)", "cost": 50},
+    {"label": "Support & onboarding (per center)", "cost": 200}
+  ],
+  "fixed_monthly": [
+    {"label": "Engineering team (6 engineers)", "cost": 180000},
+    {"label": "Sales & onboarding team (4 people)", "cost": 80000},
+    {"label": "Office & infrastructure", "cost": 25000},
+    {"label": "Marketing & acquisition", "cost": 50000},
+    {"label": "Legal, compliance, accounting", "cost": 15000}
+  ],
+  "startup": [
+    {"label": "Initial development (sunk)", "cost": 500000},
+    {"label": "NFC tags inventory (10K tags)", "cost": 75000},
+    {"label": "Thermal printers (50 units)", "cost": 125000},
+    {"label": "Launch marketing campaign", "cost": 100000},
+    {"label": "Legal setup & compliance", "cost": 50000},
+    {"label": "First 3 months operating runway", "cost": 1050000}
+  ],
+  "days_per_month": 30,
+  "capacity_per_day": 1000,
+  "plan_per_day": 200,
+  "ramp_per_day": [20, 40, 60, 80, 100, 130, 160, 180, 200, 220, 240, 250]
+}

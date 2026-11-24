@@ -1,0 +1,46 @@
+# Flutter/Dart
+.dart_tool/
+.build/
+node_modules/
+# tsc output for Edge Functions
+supabase/functions/lib/
+ios/Flutter/.last_build_id
+ios/Flutter/App.framework
+ios/Flutter/Flutter.podspec
+ios/Runner/GeneratedPluginRegistrant.dart
+android/app/key.properties
+android/key.properties
+build/
+*.iml
+.idea/
+*.log
+
+# Supabase
+supabase-debug.log
+serviceAccountKey.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local encrypted database
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# IDE
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Gradle daemon/cache
+.gradle/
+gradle/libs.versions.toml
+
+# Pytest cache
+**/.pytest_cache/
+

@@ -1,0 +1,16 @@
+name: kashkool_core
+description: Core shared models, enums, validators, and entities for Kashkool EdTech Ecosystem.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  meta: ^1.9.1
+  equatable: ^2.0.5
+  crypto: ^3.0.3
+  image: ^4.1.0
+
+dev_dependencies:
+  test: ^1.24.0
