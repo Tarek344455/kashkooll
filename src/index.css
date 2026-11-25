@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --cosmic-black: #0A0F1C;
+    --deep-void: #0E1525;
+    --nebula-indigo: #182238;
+    --space-surface: #141D2F;
+    --space-surface-variant: #1B263B;
+    --space-border: rgba(255, 255, 255, 0.09);
+    --neon-cyan: #38BDF8;
+    --electric-blue: #60A5FA;
+    --solar-gold: #EAB308;
+    --nebula-purple: #A78BFA;
+    --neon-pink: #F472B6;
+    --emerald-valid: #34D399;
+    --amber-due: #FBBF24;
+    --crimson-blocked: #F87171;
+    --text-primary: #F1F5F9;
+    --text-secondary: #94A3B8;
+  }
+
+  html,
+  body {
+    background-color: var(--deep-void);
+    color: var(--text-primary);
+    font-family: "Cairo", "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    min-height: 100%;
+    overflow-x: hidden;
+  }
+}
+
+.font-mono-tabular {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes kashkoolShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.kashkool-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(27, 38, 59, 0.7) 25%,
+    rgba(56, 189, 248, 0.14) 50%,
+    rgba(27, 38, 59, 0.7) 75%
+  );
+  background-size: 200% 100%;
+  animation: kashkoolShimmer 1.6s infinite linear;
+}
+
+/* Custom sleek dark scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0F1C;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.45);
+}

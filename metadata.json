@@ -1,0 +1,8 @@
+{
+  "name": "Kashkool — كشكول",
+  "description": "Smart Egyptian Educational Center & Study Management Platform powered exclusively by kashkool-ai-client and Supabase.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}

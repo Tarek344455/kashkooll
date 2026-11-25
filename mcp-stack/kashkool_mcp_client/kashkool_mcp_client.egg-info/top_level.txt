@@ -1,2 +1,0 @@
-kashkool_mcp_client
-tests
