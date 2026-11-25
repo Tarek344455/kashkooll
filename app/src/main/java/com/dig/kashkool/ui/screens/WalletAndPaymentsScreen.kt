@@ -1,5 +1,6 @@
 package com.dig.kashkool.ui.screens
 
+import android.content.ClipData
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,21 +33,24 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
 import com.dig.kashkool.core.l10n.AppLanguage
 import com.dig.kashkool.core.l10n.AppStrings
@@ -68,6 +73,7 @@ import com.dig.kashkool.ui.theme.SpaceSurface
 import com.dig.kashkool.ui.theme.TextPrimary
 import com.dig.kashkool.ui.theme.TextSecondary
 import com.dig.kashkool.ui.viewmodel.KashkoolUiState
+import com.dig.kashkool.ui.viewmodel.ReceiptScanUiState
 
 import androidx.compose.material3.CircularProgressIndicator
 
@@ -78,14 +84,35 @@ fun WalletAndPaymentsScreen(
     onVoidLedgerEntry: (String, String) -> Unit,
     onCompressReceipt: (Uri) -> Unit = {},
     onClearCompressedReceipt: () -> Unit = {},
+    onScanReceipt: () -> Unit = {},
 ) {
     val lang = state.language
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
 
-    var selectedChannelId by rememberSaveable { mutableStateOf(state.channels.firstOrNull()?.id.orEmpty()) }
+    val optimalChannelId = state.operatingReport?.channelOptimization?.optimalChannelId
+    var selectedChannelId by rememberSaveable {
+        mutableStateOf(optimalChannelId ?: state.channels.firstOrNull()?.id.orEmpty())
+    }
     var amountText by rememberSaveable { mutableStateOf("") }
     var senderRef by rememberSaveable { mutableStateOf("") }
     var voidTarget by remember { mutableStateOf<LedgerEntryEntity?>(null) }
+
+    LaunchedEffect(optimalChannelId, state.channels) {
+        if (selectedChannelId.isBlank() || state.channels.none { it.id == selectedChannelId }) {
+            selectedChannelId = optimalChannelId ?: state.channels.firstOrNull()?.id.orEmpty()
+        }
+    }
+
+    LaunchedEffect(state.receiptScanState) {
+        val scanSuccess = state.receiptScanState as? ReceiptScanUiState.Success ?: return@LaunchedEffect
+        val scanned = scanSuccess.result
+        if (scanned.amountEgp.isNotBlank()) amountText = scanned.amountEgp
+        if (scanned.referenceNumber.isNotBlank()) senderRef = scanned.referenceNumber
+        state.channels.firstOrNull { it.channelType == scanned.detectedChannelType }?.let { match ->
+            selectedChannelId = match.id
+        }
+    }
 
     // Zero-permission Android Photo Picker per Play Policy + <=150KB compression for Supabase Free Tier
     val photoPicker = rememberLauncherForActivityResult(
@@ -99,8 +126,8 @@ fun WalletAndPaymentsScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             FloatingGlassCard(
@@ -139,7 +166,12 @@ fun WalletAndPaymentsScreen(
                                             style = MaterialTheme.typography.bodyLarge,
                                             color = TextPrimary,
                                         )
-                                        if (ch.feePiasters == 0L) {
+                                        if (ch.id == optimalChannelId) {
+                                            StatusPill(
+                                                label = AppStrings.t("or_lowest_fee_pill", lang),
+                                                color = SolarGold,
+                                            )
+                                        } else if (ch.feePiasters == 0L) {
                                             StatusPill(
                                                 label = AppStrings.t("zero_fee", lang),
                                                 color = EmeraldValid,
@@ -155,7 +187,15 @@ fun WalletAndPaymentsScreen(
                                     }
                                 }
                                 IconButton(
-                                    onClick = { clipboard.setText(AnnotatedString(ch.accountRef)) }
+                                    onClick = {
+                                        scope.launch {
+                                            clipboard.setClipEntry(
+                                                ClipEntry(
+                                                    ClipData.newPlainText("account_ref", ch.accountRef)
+                                                )
+                                            )
+                                        }
+                                    }
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.ContentCopy,
@@ -163,6 +203,35 @@ fun WalletAndPaymentsScreen(
                                         tint = TextSecondary,
                                     )
                                 }
+                            }
+                        }
+                    }
+
+                    state.operatingReport?.channelOptimization?.let { opt ->
+                        val suggestedEgp = (opt.recommendedAmountPiasters / 100L).coerceAtLeast(1L).toString()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = if (lang == AppLanguage.AR) opt.reasonAr else opt.reasonEn,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SolarGold,
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    amountText = suggestedEgp
+                                    opt.optimalChannelId?.let { selectedChannelId = it }
+                                },
+                                modifier = Modifier.testTag("or_fill_suggested_amount_button"),
+                            ) {
+                                Text(
+                                    text = "${AppStrings.t("or_fill_suggested_amount", lang)} ($suggestedEgp)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = NeonCyan,
+                                )
                             }
                         }
                     }
@@ -241,11 +310,84 @@ fun WalletAndPaymentsScreen(
                     }
 
                     if (compressed != null) {
-                        val kb = (compressed.compressedBytes / 1024L).coerceAtLeast(1L)
                         StatusPill(
-                            label = "${AppStrings.t("compressed_badge", lang)} · $kb KB (-${compressed.savingsPercent}%)",
+                            label = AppStrings.t("compressed_badge", lang),
                             color = EmeraldValid,
                         )
+                        OutlinedButton(
+                            onClick = onScanReceipt,
+                            enabled = state.receiptScanState !is ReceiptScanUiState.Loading,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("scan_receipt_ai_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DocumentScanner,
+                                contentDescription = null,
+                                tint = NeonCyan,
+                                modifier = Modifier.padding(end = 6.dp),
+                            )
+                            Text(AppStrings.t("scan_receipt_cta", lang), color = NeonCyan)
+                        }
+                        when (val scanState = state.receiptScanState) {
+                            ReceiptScanUiState.Loading -> {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        color = NeonCyan,
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Text(
+                                        text = AppStrings.t("scan_receipt_loading", lang),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = NeonCyan,
+                                    )
+                                }
+                            }
+                            is ReceiptScanUiState.Success -> {
+                                val clarityKey = when (scanState.result.clarityStatus) {
+                                    "high" -> "scan_receipt_clarity_high"
+                                    "low" -> "scan_receipt_clarity_low"
+                                    else -> "scan_receipt_clarity_medium"
+                                }
+                                val clarityColor = when (scanState.result.clarityStatus) {
+                                    "high" -> EmeraldValid
+                                    "low" -> AmberDue
+                                    else -> NeonCyan
+                                }
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        StatusPill(label = AppStrings.t(clarityKey, lang), color = clarityColor)
+                                        Text(
+                                            text = AppStrings.t("scan_receipt_verified", lang),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = EmeraldValid,
+                                        )
+                                    }
+                                    if (scanState.result.verificationNote.isNotBlank()) {
+                                        Text(
+                                            text = scanState.result.verificationNote,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextSecondary,
+                                        )
+                                    }
+                                }
+                            }
+                            is ReceiptScanUiState.Error -> {
+                                Text(
+                                    text = AppStrings.t("scan_receipt_error", lang),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = AmberDue,
+                                )
+                            }
+                            ReceiptScanUiState.Idle -> Unit
+                        }
                     }
 
                     NeonButton(

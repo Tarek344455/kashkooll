@@ -48,14 +48,32 @@ interface KashkoolDao {
     @Query("SELECT * FROM attendance ORDER BY timestampMillis DESC")
     fun observeAttendance(): Flow<List<AttendanceEntity>>
 
+    @Query("SELECT * FROM attendance WHERE timestampMillis >= :sinceMillis ORDER BY timestampMillis ASC")
+    fun observeAttendanceSince(sinceMillis: Long): Flow<List<AttendanceEntity>>
+
+    @Query("SELECT COUNT(*) FROM attendance")
+    suspend fun getAttendanceCount(): Int
+
     @Query("SELECT * FROM attendance WHERE syncStatus = 'pending' ORDER BY timestampMillis ASC")
     suspend fun getPendingAttendance(): List<AttendanceEntity>
 
     @Query("UPDATE attendance SET syncStatus = 'synced' WHERE id = :id")
     suspend fun markAttendanceSynced(id: String)
 
+    @Query(
+        "SELECT * FROM attendance WHERE studentId = :studentId AND sessionId = :sessionId AND timestampMillis >= :startOfDayMillis ORDER BY timestampMillis DESC LIMIT 1"
+    )
+    suspend fun getAttendanceForStudentInSessionSince(
+        studentId: String,
+        sessionId: String,
+        startOfDayMillis: Long,
+    ): AttendanceEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAttendance(record: AttendanceEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAttendanceIfAbsent(records: List<AttendanceEntity>)
 
     @Query("SELECT * FROM ledger_entries ORDER BY createdAtMillis DESC")
     fun observeLedgerEntries(): Flow<List<LedgerEntryEntity>>

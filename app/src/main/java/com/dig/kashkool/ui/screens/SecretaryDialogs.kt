@@ -25,11 +25,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.dig.kashkool.core.l10n.AppLanguage
 import com.dig.kashkool.core.l10n.AppStrings
+import com.dig.kashkool.core.or.StudentOrProfile
 import com.dig.kashkool.data.local.GroupEntity
 import com.dig.kashkool.data.local.LedgerKind
 import com.dig.kashkool.data.local.StudentEntity
 import com.dig.kashkool.ui.components.NeonButton
 import com.dig.kashkool.ui.theme.EmeraldValid
+import com.dig.kashkool.ui.theme.NeonCyan
 import com.dig.kashkool.ui.theme.SpaceSurface
 import com.dig.kashkool.ui.theme.TextPrimary
 import com.dig.kashkool.ui.theme.TextSecondary
@@ -39,12 +41,18 @@ import com.dig.kashkool.ui.theme.TextSecondary
 fun WalkInStudentDialog(
     groups: List<GroupEntity>,
     lang: AppLanguage,
+    optimalGroupId: String? = null,
     onDismiss: () -> Unit,
     onConfirm: (name: String, phone: String, groupId: String, initialTopUpEgp: String) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
-    var selectedGroupId by remember(groups) { mutableStateOf(groups.firstOrNull()?.id.orEmpty()) }
+    var selectedGroupId by remember(groups, optimalGroupId) {
+        mutableStateOf(
+            optimalGroupId?.takeIf { id -> groups.any { it.id == id } }
+                ?: groups.firstOrNull()?.id.orEmpty()
+        )
+    }
     var topUpEgp by remember { mutableStateOf("80") }
 
     AlertDialog(
@@ -75,12 +83,18 @@ fun WalkInStudentDialog(
                 if (groups.isNotEmpty()) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         groups.forEach { grp ->
+                            val baseName = if (lang == AppLanguage.AR) grp.nameAr else grp.nameEn
+                            val labelText = if (grp.id == optimalGroupId) {
+                                "$baseName · ${AppStrings.t("or_best_fit_group", lang)}"
+                            } else {
+                                baseName
+                            }
                             FilterChip(
                                 selected = selectedGroupId == grp.id,
                                 onClick = { selectedGroupId = grp.id },
                                 label = {
                                     Text(
-                                        text = if (lang == AppLanguage.AR) grp.nameAr else grp.nameEn,
+                                        text = labelText,
                                         style = MaterialTheme.typography.labelSmall,
                                     )
                                 },
@@ -120,11 +134,20 @@ fun WalkInStudentDialog(
 fun CashEntryDialog(
     student: StudentEntity,
     lang: AppLanguage,
+    orProfile: StudentOrProfile? = null,
     onDismiss: () -> Unit,
     onConfirm: (LedgerKind, String, String) -> Unit,
 ) {
-    var selectedKind by remember { mutableStateOf(LedgerKind.CASH_TOPUP) }
-    var amountText by remember { mutableStateOf("100") }
+    var selectedKind by remember(student.id) {
+        mutableStateOf(
+            if (student.dueBalancePiasters > 0L) LedgerKind.PARTIAL_INSTALLMENT
+            else LedgerKind.CASH_TOPUP
+        )
+    }
+    var amountText by remember(student.id, orProfile) {
+        val suggested = orProfile?.recommendedInstallmentPiasters?.div(100L)?.takeIf { it > 0L }?.toString()
+        mutableStateOf(suggested ?: "100")
+    }
     var noteText by remember { mutableStateOf("") }
 
     AlertDialog(
@@ -133,6 +156,13 @@ fun CashEntryDialog(
         title = { Text(text = if (lang == AppLanguage.AR) student.nameAr else student.nameEn, color = TextPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                orProfile?.let { profile ->
+                    Text(
+                        text = if (lang == AppLanguage.AR) profile.actionSummaryAr else profile.actionSummaryEn,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = NeonCyan,
+                    )
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(
                         LedgerKind.CASH_TOPUP to "cash_topup",

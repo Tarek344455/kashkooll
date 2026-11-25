@@ -2,23 +2,24 @@ package com.dig.kashkool.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val CosmicBlack = Color(0xFF020617)
-val DeepVoid = Color(0xFF060913)
-val NebulaIndigo = Color(0xFF1E1B4B)
-val SpaceSurface = Color(0xFF0B1021)
-val SpaceSurfaceVariant = Color(0xFF131B33)
-val SpaceBorder = Color(0x1FFFFFFF)
+// Calm midnight-slate palette engineered for long reading comfort
+val CosmicBlack = Color(0xFF0A0F1C)
+val DeepVoid = Color(0xFF0E1525)
+val NebulaIndigo = Color(0xFF182238)
+val SpaceSurface = Color(0xFF141D2F)
+val SpaceSurfaceVariant = Color(0xFF1B263B)
+val SpaceBorder = Color(0x16FFFFFF)
 
-val NeonCyan = Color(0xFF00F5D4)
-val ElectricBlue = Color(0xFF38BDF8)
-val SolarGold = Color(0xFFFFD700)
-val NebulaPurple = Color(0xFF7B2FFF)
-val NeonPink = Color(0xFFFF2D95)
+// Restrained, soothing accents (kept symbol names for codebase compatibility)
+val NeonCyan = Color(0xFF38BDF8)       // Soft calm sky-blue primary
+val ElectricBlue = Color(0xFF60A5FA)   // Gentle steel-blue secondary
+val SolarGold = Color(0xFFEAB308)      // Warm muted amber-gold
+val NebulaPurple = Color(0xFFA78BFA)   // Soft lavender accent
+val NeonPink = Color(0xFFF472B6)
 
-val EmeraldValid = Color(0xFF10B981)
-val AmberDue = Color(0xFFF59E0B)
-val CrimsonBlocked = Color(0xFFEF4444)
+val EmeraldValid = Color(0xFF34D399)   // Soft sage-emerald
+val AmberDue = Color(0xFFFBBF24)       // Gentle warm amber
+val CrimsonBlocked = Color(0xFFF87171) // Soft coral-red (less harsh than #EF4444)
 
-val TextPrimary = Color(0xFFF8FAFC)
-val TextSecondary = Color(0xFFB8C4D9)
-val TextMuted = Color(0xFF7D8AA3)
+val TextPrimary = Color(0xFFF1F5F9)
+val TextSecondary = Color(0xFF94A3B8)

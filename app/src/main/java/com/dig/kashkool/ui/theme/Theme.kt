@@ -26,13 +26,13 @@ private val CosmicDarkColorScheme = darkColorScheme(
     onSurfaceVariant = TextSecondary,
     outline = SpaceBorder,
     error = CrimsonBlocked,
-    onError = TextPrimary,
+    onError = CosmicBlack,
 )
 
 private val KashkoolShapes = Shapes(
-    small = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(22.dp),
+    large = RoundedCornerShape(20.dp),
 )
 
 @Composable

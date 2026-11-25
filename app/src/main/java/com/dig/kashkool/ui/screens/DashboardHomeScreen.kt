@@ -17,15 +17,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.FamilyRestroom
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -47,9 +46,9 @@ import com.dig.kashkool.data.local.LedgerKind
 import com.dig.kashkool.data.local.UserRole
 import com.dig.kashkool.ui.components.FloatingGlassCard
 import com.dig.kashkool.ui.components.NeonButton
-import com.dig.kashkool.ui.components.OperatingSystemCard
 import com.dig.kashkool.ui.components.ShimmerSkeletonCard
 import com.dig.kashkool.ui.components.StatusPill
+import com.dig.kashkool.ui.components.StudentQrPassCard
 import com.dig.kashkool.ui.theme.AmberDue
 import com.dig.kashkool.ui.theme.ElectricBlue
 import com.dig.kashkool.ui.theme.EmeraldValid
@@ -65,14 +64,16 @@ import com.dig.kashkool.ui.viewmodel.KashkoolUiState
 fun DashboardHomeScreen(
     state: KashkoolUiState,
     onNavigateTab: (String) -> Unit,
-    onSyncNow: () -> Unit = {},
     onToggleStreakShield: () -> Unit = {},
     onReviewRescueItem: (String) -> Unit = {},
     onCompleteRescueItem: (String) -> Unit = {},
-    onRequestOperationalBriefing: () -> Unit = {},
+    onQrCodeCopied: () -> Unit = {},
 ) {
     val lang = state.language
-    val primaryStudent = state.students.firstOrNull()
+    val qrCodeFromLabel = Regex("QR:([A-Za-z0-9]+)").find(state.userLabel)?.groupValues?.getOrNull(1)
+    val primaryStudent = qrCodeFromLabel?.let { code ->
+        state.students.firstOrNull { it.qrActivationCode.equals(code, ignoreCase = true) }
+    } ?: state.students.firstOrNull { it.id == "stu-1" } ?: state.students.firstOrNull()
     val totalCollected = state.ledger
         .filter { it.kind == LedgerKind.CASH_TOPUP.key || it.kind == LedgerKind.PARTIAL_INSTALLMENT.key }
         .sumOf { it.amountPiasters }
@@ -81,8 +82,8 @@ fun DashboardHomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             ShimmerSkeletonCard()
             ShimmerSkeletonCard()
@@ -93,86 +94,38 @@ fun DashboardHomeScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
             FloatingGlassCard(
-                glowColor = NeonCyan,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
                             text = state.userLabel,
                             style = MaterialTheme.typography.titleMedium,
                             color = TextPrimary,
-                            modifier = Modifier.weight(1f),
                         )
-                        StatusPill(
-                            label = AppStrings.t("role_${state.activeRole.key}", lang),
-                            color = NeonCyan,
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
                         Text(
-                            text = if (state.pendingSyncCount > 0) {
-                                "${state.pendingSyncCount} ${AppStrings.t("pending_sync", lang)}"
-                            } else {
-                                AppStrings.t("synced_all", lang)
-                            },
+                            text = AppStrings.t("subtitle_cosmic", lang),
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (state.pendingSyncCount > 0) AmberDue else EmeraldValid,
-                            modifier = Modifier.weight(1f),
+                            color = TextSecondary,
                         )
-                        OutlinedButton(
-                            onClick = onSyncNow,
-                            enabled = !state.syncBusy,
-                            modifier = Modifier.testTag("dashboard_sync_button"),
-                        ) {
-                            if (state.syncBusy) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = NeonCyan,
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.CloudSync,
-                                    contentDescription = AppStrings.t("sync_now", lang),
-                                    tint = NeonCyan,
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .padding(end = 4.dp),
-                                )
-                                Text(
-                                    text = AppStrings.t("sync_now", lang),
-                                    color = NeonCyan,
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                            }
-                        }
                     }
+                    StatusPill(
+                        label = AppStrings.t("role_${state.activeRole.key}", lang),
+                        color = NeonCyan,
+                    )
                 }
-            }
-        }
-
-        state.operatingReport?.let { report ->
-            item {
-                OperatingSystemCard(
-                    report = report,
-                    briefingState = state.aiBriefingState,
-                    lang = lang,
-                    onRequestBriefing = onRequestOperationalBriefing,
-                )
             }
         }
 
@@ -180,7 +133,7 @@ fun DashboardHomeScreen(
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     FloatingGlassCard(
                         glowColor = EmeraldValid,
@@ -232,10 +185,9 @@ fun DashboardHomeScreen(
 
             item {
                 FloatingGlassCard(
-                    glowColor = ElectricBlue,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -258,19 +210,34 @@ fun DashboardHomeScreen(
                                 .height(8.dp)
                                 .clip(MaterialTheme.shapes.small),
                             color = NeonCyan,
-                            trackColor = Color.White.copy(alpha = 0.1f),
+                            trackColor = Color.White.copy(alpha = 0.08f),
                         )
                     }
+                }
+            }
+
+            if (state.activeRole == UserRole.STUDENT && state.activeStudentQrToken.isNotBlank()) {
+                item {
+                    val activeName = if (lang == AppLanguage.AR) primaryStudent.nameAr else primaryStudent.nameEn
+                    StudentQrPassCard(
+                        studentName = activeName,
+                        liveToken = state.activeStudentQrToken,
+                        secondsRemaining = state.qrSecondsRemaining,
+                        cardCode = state.activeStudentCardCode,
+                        cardPayload = state.activeStudentCardPayload,
+                        checkedInToday = state.activeStudentCheckedInToday,
+                        lang = lang,
+                        onCodeCopied = onQrCodeCopied,
+                    )
                 }
             }
         } else {
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     FloatingGlassCard(
-                        glowColor = NeonCyan,
                         modifier = Modifier.weight(1f),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -287,7 +254,7 @@ fun DashboardHomeScreen(
                         }
                     }
                     FloatingGlassCard(
-                        glowColor = AmberDue,
+                        glowColor = SolarGold,
                         modifier = Modifier.weight(1f),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -308,72 +275,61 @@ fun DashboardHomeScreen(
         }
 
         if (state.activeRole == UserRole.STUDENT) {
-            item {
-                FloatingGlassCard(
-                    glowColor = AmberDue,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = AppStrings.t("student_rescue_title", lang),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = SolarGold,
-                        )
-                        if (state.rescueItems.isEmpty()) {
+            if (state.rescueItems.isNotEmpty()) {
+                item {
+                    FloatingGlassCard(
+                        glowColor = AmberDue,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(
-                                text = AppStrings.t("student_rescue_empty", lang),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = EmeraldValid,
+                                text = AppStrings.t("student_rescue_title", lang),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = SolarGold,
                             )
-                        } else {
                             state.rescueItems.forEach { item ->
                                 val topic = if (lang == AppLanguage.AR) item.topicAr else item.topicEn
                                 val hint = if (lang == AppLanguage.AR) item.hintAr else item.hintEn
-                                FloatingGlassCard(
-                                    glowColor = NeonCyan.copy(alpha = 0.5f),
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Text(
-                                                text = topic,
-                                                style = MaterialTheme.typography.titleSmall,
-                                                color = TextPrimary,
-                                            )
-                                            StatusPill(label = "+${item.boostPercent}%", color = EmeraldValid)
-                                        }
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
                                         Text(
-                                            text = hint,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = TextSecondary,
+                                            text = topic,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = TextPrimary,
                                         )
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            NeonButton(
-                                                text = AppStrings.t("student_rescue_cta", lang),
-                                                accentColor = NeonCyan,
-                                                onClick = { onReviewRescueItem(topic) },
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .testTag("rescue_review_${item.id}"),
+                                        StatusPill(label = "+${item.boostPercent}%", color = EmeraldValid)
+                                    }
+                                    Text(
+                                        text = hint,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextSecondary,
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        NeonButton(
+                                            text = AppStrings.t("student_rescue_cta", lang),
+                                            accentColor = NeonCyan,
+                                            onClick = { onReviewRescueItem(topic) },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .testTag("rescue_review_${item.id}"),
+                                        )
+                                        OutlinedButton(
+                                            onClick = { onCompleteRescueItem(item.id) },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .testTag("rescue_done_${item.id}"),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                tint = EmeraldValid,
+                                                modifier = Modifier.size(16.dp),
                                             )
-                                            OutlinedButton(
-                                                onClick = { onCompleteRescueItem(item.id) },
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .testTag("rescue_done_${item.id}"),
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.CheckCircle,
-                                                    contentDescription = null,
-                                                    tint = EmeraldValid,
-                                                    modifier = Modifier.size(16.dp),
-                                                )
-                                                Text(AppStrings.t("student_rescue_done", lang), color = EmeraldValid)
-                                            }
+                                            Text(AppStrings.t("student_rescue_done", lang), color = EmeraldValid)
                                         }
                                     }
                                 }
@@ -388,52 +344,45 @@ fun DashboardHomeScreen(
                     glowColor = if (state.streakShieldActive) EmeraldValid else NebulaPurple,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Shield,
-                                    contentDescription = AppStrings.t("streak_shield_title", lang),
-                                    tint = if (state.streakShieldActive) EmeraldValid else SolarGold,
-                                )
+                            Icon(
+                                imageVector = Icons.Default.Shield,
+                                contentDescription = AppStrings.t("streak_shield_title", lang),
+                                tint = if (state.streakShieldActive) EmeraldValid else SolarGold,
+                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(
                                     text = AppStrings.t("streak_shield_title", lang),
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = MaterialTheme.typography.titleSmall,
                                     color = TextPrimary,
                                 )
+                                Text(
+                                    text = AppStrings.t("streak_shield_desc", lang),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary,
+                                )
                             }
-                            StatusPill(
-                                label = AppStrings.t(
-                                    if (state.streakShieldActive) "streak_shield_active" else "streak_shield_ready",
-                                    lang,
-                                ),
-                                color = if (state.streakShieldActive) EmeraldValid else SolarGold,
-                            )
                         }
-                        Text(
-                            text = AppStrings.t("streak_shield_desc", lang),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary,
-                        )
                         OutlinedButton(
                             onClick = onToggleStreakShield,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("streak_shield_toggle"),
+                            modifier = Modifier.testTag("streak_shield_toggle"),
                         ) {
                             Text(
                                 text = AppStrings.t(
                                     if (state.streakShieldActive) "streak_shield_active" else "streak_shield_ready",
                                     lang,
                                 ),
-                                color = NeonCyan,
+                                color = if (state.streakShieldActive) EmeraldValid else NeonCyan,
+                                style = MaterialTheme.typography.labelMedium,
                             )
                         }
                     }
@@ -454,8 +403,8 @@ fun DashboardHomeScreen(
             val actions = buildQuickActions(state.activeRole)
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 maxItemsInEachRow = 2,
             ) {
                 actions.forEach { action ->
@@ -484,15 +433,15 @@ private fun buildQuickActions(role: UserRole): List<QuickActionItem> {
     return when (role) {
         UserRole.SECRETARY -> listOf(
             QuickActionItem("open_desk", Icons.Default.PointOfSale, "desk", NeonCyan),
+            QuickActionItem("open_attendance_dashboard", Icons.Default.Insights, "analytics", ElectricBlue),
             QuickActionItem("open_settlement", Icons.Default.Payments, "teacher", SolarGold),
             QuickActionItem("open_checkout", Icons.Default.AccountBalanceWallet, "wallet", EmeraldValid),
-            QuickActionItem("open_courses", Icons.Default.School, "courses", ElectricBlue),
         )
         UserRole.TEACHER -> listOf(
+            QuickActionItem("open_attendance_dashboard", Icons.Default.Insights, "analytics", NeonCyan),
             QuickActionItem("open_settlement", Icons.Default.Payments, "teacher", SolarGold),
-            QuickActionItem("open_courses", Icons.Default.School, "courses", NeonCyan),
-            QuickActionItem("open_assistant", Icons.Default.AutoStories, "assistant", NebulaPurple),
             QuickActionItem("open_desk", Icons.Default.PointOfSale, "desk", ElectricBlue),
+            QuickActionItem("open_assistant", Icons.Default.AutoStories, "assistant", NebulaPurple),
         )
         UserRole.PARENT -> listOf(
             QuickActionItem("open_parent", Icons.Default.FamilyRestroom, "parent", NeonCyan),
@@ -528,11 +477,11 @@ private fun QuickActionTile(
                 imageVector = icon,
                 contentDescription = title,
                 tint = accent,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier.size(24.dp),
             )
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleSmall,
                 color = TextPrimary,
             )
         }

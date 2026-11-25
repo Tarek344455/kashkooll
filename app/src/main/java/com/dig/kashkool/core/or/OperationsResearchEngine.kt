@@ -1,10 +1,12 @@
 package com.dig.kashkool.core.or
 
+import com.dig.kashkool.core.utils.EgyptValidators
 import com.dig.kashkool.data.local.AttendanceEntity
 import com.dig.kashkool.data.local.AvailabilityStatus
 import com.dig.kashkool.data.local.GroupEntity
 import com.dig.kashkool.data.local.LedgerEntryEntity
 import com.dig.kashkool.data.local.LedgerKind
+import com.dig.kashkool.data.local.PaymentChannelEntity
 import com.dig.kashkool.data.local.PaymentSubmissionEntity
 import com.dig.kashkool.data.local.Resource
 import com.dig.kashkool.data.local.ResourceType
@@ -12,91 +14,12 @@ import com.dig.kashkool.data.local.StudentEntity
 import com.dig.kashkool.data.local.SubmissionStatus
 import com.dig.kashkool.data.local.UserRole
 import kotlin.math.ceil
-import kotlin.math.pow
 import kotlin.math.roundToInt
 
-data class StudyCandidate(
-    val id: String,
-    val titleAr: String,
-    val titleEn: String,
-    val minutesRequired: Int,
-    val masteryGainPercent: Int,
-)
-
-data class StudyKnapsackResult(
-    val timeBudgetMinutes: Int,
-    val selectedItems: List<StudyCandidate>,
-    val totalMinutesUsed: Int,
-    val guaranteedGainPercent: Int,
-)
-
-data class GroupAllocationResult(
-    val totalEnrolled: Int,
-    val totalCapacity: Int,
-    val utilizationPercent: Int,
-    val bottleneckGroupId: String?,
-    val bottleneckGroupAr: String?,
-    val bottleneckGroupEn: String?,
-    val bottleneckFillPercent: Int,
-    val slackGroupId: String?,
-    val slackGroupAr: String?,
-    val slackGroupEn: String?,
-    val recommendedSeatShift: Int,
-)
-
-data class FinancialCertaintyResult(
-    val attendedCount: Int,
-    val splitPercentUsed: Int,
-    val grossPiasters: Long,
-    val centerSplitPiasters: Long,
-    val assistantWagesPiasters: Long,
-    val netPayoutPiasters: Long,
-    val breakEvenAttendance: Int,
-    val marginOfSafetyPercent: Int,
-    val pendingDuesPiasters: Long,
-    val ledgerBalanced: Boolean,
-    val voidChainCount: Int,
-)
-
-data class QueueDispatchResult(
-    val activeLanes: Int,
-    val expectedWaitSeconds: Int,
-    val queueUtilizationPercent: Int,
-    val recommendExtraLane: Boolean,
-)
-
-data class ResourceConflictReport(
-    val totalResources: Int,
-    val availableCount: Int,
-    val inUseCount: Int,
-    val unavailableCount: Int,
-    val hasHallOrScheduleConflict: Boolean,
-    val summaryAr: String,
-    val summaryEn: String,
-)
-
-data class OperationalDecision(
-    val titleAr: String,
-    val titleEn: String,
-    val detailAr: String,
-    val detailEn: String,
-    val verifiedFormula: String,
-    val priorityHigh: Boolean = false,
-)
-
-data class SystemOperatingReport(
-    val certaintyScorePercent: Int,
-    val groupAllocation: GroupAllocationResult,
-    val financialCertainty: FinancialCertaintyResult,
-    val studyKnapsack: StudyKnapsackResult,
-    val queueDispatch: QueueDispatchResult,
-    val resourceConflict: ResourceConflictReport,
-    val decisions: List<OperationalDecision>,
-)
-
 /**
- * Pure Kotlin Operations Research (OR) kernel running at $0 infrastructure cost.
- * Every number returned is mathematically deterministic and auditable to guarantee user certainty.
+ * Pure Kotlin Operations Research (OR) kernel driving every decision across Kashkool at $0 cost.
+ * Combines 0/1 Knapsack DP, Multi-Group Flow Balancing, Erlang-C Queueing, Break-Even & Void-Audit,
+ * Fee-Minimizing Channel Assignment, Low-Data Curriculum Optimization, and Student Retention Triage.
  */
 object OperationsResearchEngine {
 
@@ -149,7 +72,7 @@ object OperationsResearchEngine {
     }
 
     /**
-     * Hall & Group Capacity Linear Rebalancing Model.
+     * Multi-Group Hall Capacity Linear Flow Solver + Walk-In Optimal Assignment.
      */
     fun analyzeGroupAllocation(groups: List<GroupEntity>): GroupAllocationResult {
         if (groups.isEmpty()) {
@@ -175,6 +98,51 @@ object OperationsResearchEngine {
             0
         }
 
+        // Greedy multi-group flow transfer solver across ALL overloaded (>=85%) & underloaded (<80%) groups
+        val simEnrolled = groups.associate { it.id to it.enrolled }.toMutableMap()
+        val transfers = mutableListOf<SeatTransferPlan>()
+        val overloaded = groups
+            .filter { ((it.enrolled * 100.0) / it.capacity.coerceAtLeast(1)) >= 85.0 }
+            .sortedByDescending { it.enrolled.toDouble() / it.capacity.coerceAtLeast(1) }
+        val receivers = groups
+            .filter { it.enrolled < it.capacity }
+            .sortedBy { it.enrolled.toDouble() / it.capacity.coerceAtLeast(1) }
+
+        for (src in overloaded) {
+            val targetMax = (src.capacity * 0.80).roundToInt()
+            var excess = ((simEnrolled[src.id] ?: src.enrolled) - targetMax).coerceAtLeast(0)
+            for (dst in receivers) {
+                if (excess <= 0 || src.id == dst.id) continue
+                val dstNow = simEnrolled[dst.id] ?: dst.enrolled
+                val dstRoom = (dst.capacity - dstNow).coerceAtLeast(0)
+                val move = minOf(excess, dstRoom)
+                if (move > 0) {
+                    transfers += SeatTransferPlan(
+                        fromGroupId = src.id,
+                        fromGroupAr = src.nameAr,
+                        fromGroupEn = src.nameEn,
+                        toGroupId = dst.id,
+                        toGroupAr = dst.nameAr,
+                        toGroupEn = dst.nameEn,
+                        seatsToMove = move,
+                    )
+                    simEnrolled[src.id] = (simEnrolled[src.id] ?: src.enrolled) - move
+                    simEnrolled[dst.id] = dstNow + move
+                    excess -= move
+                }
+            }
+        }
+
+        val optimalWalkIn = groups
+            .filter { it.enrolled < it.capacity }
+            .minByOrNull { it.enrolled.toDouble() / it.capacity.coerceAtLeast(1) }
+            ?: slackest
+
+        // Balance score: penalize spread between max fill and min fill across halls
+        val fills = groups.map { (it.enrolled * 100.0) / it.capacity.coerceAtLeast(1) }
+        val spread = ((fills.maxOrNull() ?: 0.0) - (fills.minOrNull() ?: 0.0)).roundToInt()
+        val balanceScore = (100 - (spread / 2)).coerceIn(35, 100)
+
         val hasDistinctSlack = slackest != null && slackest.id != busiest?.id
 
         return GroupAllocationResult(
@@ -189,11 +157,16 @@ object OperationsResearchEngine {
             slackGroupAr = if (hasDistinctSlack) slackest?.nameAr else null,
             slackGroupEn = if (hasDistinctSlack) slackest?.nameEn else null,
             recommendedSeatShift = seatShift,
+            transferPlans = transfers,
+            optimalWalkInGroupId = optimalWalkIn?.id,
+            optimalWalkInGroupAr = optimalWalkIn?.nameAr,
+            optimalWalkInGroupEn = optimalWalkIn?.nameEn,
+            balanceScorePercent = balanceScore,
         )
     }
 
     /**
-     * Break-Even, Margin of Safety, and Immutable Ledger Balance Audit.
+     * Break-Even, Margin of Safety, Resource Cost Coverage & Void-Chain Anomaly Auditor.
      */
     fun analyzeFinancialCertainty(
         groups: List<GroupEntity>,
@@ -203,14 +176,22 @@ object OperationsResearchEngine {
         submissions: List<PaymentSubmissionEntity>,
         assistantWagesPiasters: Long = 15000L,
         splitPercentOverride: Int? = null,
+        resources: List<Resource> = emptyList(),
     ): FinancialCertaintyResult {
         val attendedCount = maxOf(attendance.size, 18)
-        val avgPrice = groups.firstOrNull()?.pricePerSessionPiasters ?: 8000L
+        val avgPrice = groups.takeIf { it.isNotEmpty() }
+            ?.map { it.pricePerSessionPiasters }?.average()?.toLong()?.coerceAtLeast(1000L)
+            ?: 8000L
         val splitPct = (splitPercentOverride ?: groups.firstOrNull()?.centerSplitPercent ?: 20).coerceIn(0, 80)
         val safeWages = assistantWagesPiasters.coerceAtLeast(0L)
+        val resourceOverhead = resources
+            .filter { it.availabilityStatus != AvailabilityStatus.UNAVAILABLE }
+            .sumOf { it.costPiasters.coerceAtLeast(0L) }
+
         val gross = attendedCount * avgPrice
         val centerSplit = (gross * splitPct) / 100L
         val netPayout = (gross - centerSplit - safeWages).coerceAtLeast(0L)
+        val netAfterResources = (netPayout - resourceOverhead).coerceAtLeast(0L)
 
         val contributionPerStudent = (avgPrice * (100 - splitPct) / 100.0).coerceAtLeast(1.0)
         val breakEven = ceil(safeWages / contributionPerStudent).toInt().coerceAtLeast(1)
@@ -219,7 +200,19 @@ object OperationsResearchEngine {
         } else 0
 
         val totalDues = students.sumOf { it.dueBalancePiasters }
+        val collectedPositive = ledger
+            .filter {
+                it.kind == LedgerKind.CASH_TOPUP.key ||
+                    it.kind == LedgerKind.PARTIAL_INSTALLMENT.key ||
+                    it.kind == LedgerKind.BOOK_RESERVATION.key
+            }
+            .sumOf { it.amountPiasters.coerceAtLeast(0L) }
+        val totalCollectible = (collectedPositive + totalDues).coerceAtLeast(1L)
+        val collectionEfficiency = ((collectedPositive * 100.0) / totalCollectible).roundToInt().coerceIn(0, 100)
+
         val voidCount = ledger.count { it.kind == LedgerKind.VOID_ENTRY.key }
+        val nonVoidCount = ledger.count { it.kind != LedgerKind.VOID_ENTRY.key }.coerceAtLeast(1)
+        val voidRatio = ((voidCount * 100.0) / nonVoidCount).roundToInt().coerceIn(0, 100)
 
         val entryIds = ledger.map { it.id }.toSet()
         val voidsConsistent = ledger
@@ -229,6 +222,9 @@ object OperationsResearchEngine {
             .filter { it.status == SubmissionStatus.APPROVED.key }
             .sumOf { it.amountPiasters }
         val ledgerBalanced = voidsConsistent && approvedSum >= 0L && netPayout + centerSplit + safeWages <= gross + safeWages
+        val anomalyDetected = !voidsConsistent || voidRatio >= 25
+        val projectedWeeklyGross = groups.sumOf { it.enrolled.toLong() * it.pricePerSessionPiasters * 2L }
+            .takeIf { it > 0L } ?: (gross * 2L)
 
         return FinancialCertaintyResult(
             attendedCount = attendedCount,
@@ -242,37 +238,20 @@ object OperationsResearchEngine {
             pendingDuesPiasters = totalDues,
             ledgerBalanced = ledgerBalanced,
             voidChainCount = voidCount,
+            resourceOverheadPiasters = resourceOverhead,
+            netAfterResourcesPiasters = netAfterResources,
+            collectionEfficiencyPercent = collectionEfficiency,
+            voidRatioPercent = voidRatio,
+            anomalyDetected = anomalyDetected,
+            projectedWeeklyGrossPiasters = projectedWeeklyGross,
         )
     }
 
-    /**
-     * M/M/c Queueing Theory estimator for center reception stairs.
-     */
     fun analyzeQueueDispatch(
         enrolledCount: Int,
         rushModeEnabled: Boolean,
-    ): QueueDispatchResult {
-        val peakArrivalsPerMin = ((enrolledCount.coerceAtLeast(25) * 0.35) / 10.0).coerceIn(1.5, 24.0)
-        val serviceRatePerLane = 15.0
-        val lanes = if (rushModeEnabled) 2 else 1
-        val totalCapacityRate = lanes * serviceRatePerLane
-        val rho = (peakArrivalsPerMin / totalCapacityRate).coerceIn(0.05, 0.96)
-        val utilizationPower = rho.pow(lanes.toDouble())
-        val expectedWaitMinutes = (utilizationPower / (totalCapacityRate * (1.0 - rho))).coerceAtLeast(0.0)
-        val expectedWaitSec = (expectedWaitMinutes * 60.0).roundToInt().coerceIn(2, 180)
-        val utilPct = (rho * 100.0).roundToInt().coerceIn(5, 99)
+    ): QueueDispatchResult = OrSubSolvers.solveErlangCQueue(enrolledCount, rushModeEnabled)
 
-        return QueueDispatchResult(
-            activeLanes = lanes,
-            expectedWaitSeconds = expectedWaitSec,
-            queueUtilizationPercent = utilPct,
-            recommendExtraLane = utilPct >= 60 && !rushModeEnabled,
-        )
-    }
-
-    /**
-     * Evaluates physical halls, equipment tools, and human assistant readiness vs active groups.
-     */
     fun analyzeResourceConflicts(
         groups: List<GroupEntity>,
         resources: List<Resource>,
@@ -280,10 +259,15 @@ object OperationsResearchEngine {
         val available = resources.count { it.availabilityStatus == AvailabilityStatus.AVAILABLE }
         val inUse = resources.count { it.availabilityStatus == AvailabilityStatus.IN_USE }
         val unavailable = resources.count { it.availabilityStatus == AvailabilityStatus.UNAVAILABLE }
+        val utilizedCost = resources
+            .filter { it.availabilityStatus != AvailabilityStatus.UNAVAILABLE }
+            .sumOf { it.costPiasters.coerceAtLeast(0L) }
 
-        val duplicateSchedules = groups
+        val conflictingGroups = groups
             .groupBy { it.scheduleEn.trim().lowercase() }
-            .any { it.key.isNotEmpty() && it.value.size > 1 }
+            .filter { it.key.isNotEmpty() && it.value.size > 1 }
+            .values.sumOf { it.size }
+        val duplicateSchedules = conflictingGroups > 0
         val availableToolsOrHalls = resources.count {
             it.type == ResourceType.TOOL && it.availabilityStatus != AvailabilityStatus.UNAVAILABLE
         }
@@ -291,13 +275,13 @@ object OperationsResearchEngine {
         val conflict = duplicateSchedules || hallShortage || unavailable > 0
 
         val summaryAr = when {
-            duplicateSchedules -> "تعارض في مواعيد مجموعتين — راجع جدول القاعات."
+            duplicateSchedules -> "تعارض في مواعيد $conflictingGroups مجموعات — راجع جدول القاعات."
             hallShortage -> "لا توجد قاعات أو أجهزة متاحة لتشغيل الحصص."
             unavailable > 0 -> "يوجد $unavailable مورد خارج الخدمة حالياً — تأكد من البدائل."
             else -> "جميع القاعات والموارد جاهزة ($available متاح، $inUse قيد التشغيل)."
         }
         val summaryEn = when {
-            duplicateSchedules -> "Schedule overlap detected between groups."
+            duplicateSchedules -> "Schedule overlap across $conflictingGroups groups."
             hallShortage -> "No available halls or tools for scheduled sessions."
             unavailable > 0 -> "$unavailable resource(s) unavailable — verify backup."
             else -> "All halls & resources clear ($available ready, $inUse active)."
@@ -311,6 +295,8 @@ object OperationsResearchEngine {
             hasHallOrScheduleConflict = conflict,
             summaryAr = summaryAr,
             summaryEn = summaryEn,
+            utilizedResourceCostPiasters = utilizedCost,
+            conflictGroupCount = conflictingGroups,
         )
     }
 
@@ -326,6 +312,11 @@ object OperationsResearchEngine {
         resources: List<Resource> = emptyList(),
         assistantWagesPiasters: Long = 15000L,
         splitPercentOverride: Int? = null,
+        channels: List<PaymentChannelEntity> = emptyList(),
+        courses: List<CourseCandidate> = emptyList(),
+        completedCourseIds: Set<String> = emptySet(),
+        lowDataMode: Boolean = true,
+        studyBudgetMinutes: Int = 15,
     ): SystemOperatingReport {
         val alloc = analyzeGroupAllocation(groups)
         val finance = analyzeFinancialCertainty(
@@ -336,18 +327,38 @@ object OperationsResearchEngine {
             submissions = submissions,
             assistantWagesPiasters = assistantWagesPiasters,
             splitPercentOverride = splitPercentOverride,
+            resources = resources,
         )
-        val knapsack = solveStudyKnapsack(rescueCandidates, budgetMinutes = 15)
+        val knapsack = solveStudyKnapsack(rescueCandidates, budgetMinutes = studyBudgetMinutes.coerceIn(5, 90))
         val queue = analyzeQueueDispatch(alloc.totalEnrolled, rushModeEnabled)
         val resourceReport = analyzeResourceConflicts(groups, resources)
 
-        val auditWeight = if (finance.ledgerBalanced) 35 else 10
-        val safetyWeight = ((finance.marginOfSafetyPercent.coerceIn(0, 100) * 30) / 100)
-        val capacityWeight = if (alloc.bottleneckFillPercent <= 92) 20 else 10
-        val resourceWeight = if (!resourceReport.hasHallOrScheduleConflict) 15 else 6
-        val certainty = (auditWeight + safetyWeight + capacityWeight + resourceWeight).coerceIn(45, 100)
+        val (studentProfiles, priorityIds) = OrSubSolvers.evaluateStudentProfiles(students, groups, attendance)
+        val primaryProfile = students.firstOrNull()?.let { studentProfiles[it.id] }
+        val targetTopUp = primaryProfile?.recommendedInstallmentPiasters ?: 24000L
+        val channelOpt = OrSubSolvers.optimizePaymentChannel(channels, targetTopUp)
+        val weakTitles = rescueCandidates.map { it.titleEn }
+        val courseRecs = OrSubSolvers.optimizeCourseSequence(courses, completedCourseIds, weakTitles, lowDataMode)
 
-        val decisions = buildDecisions(role, alloc, finance, knapsack, queue, resourceReport)
+        val auditScore = if (finance.ledgerBalanced && !finance.anomalyDetected) 35 else if (finance.ledgerBalanced) 24 else 10
+        val marginScore = ((finance.marginOfSafetyPercent.coerceIn(0, 100) * 25) / 100)
+        val capacityScore = ((alloc.balanceScorePercent.coerceIn(40, 100) * 15) / 100)
+        val queueSlaScore = if (queue.expectedWaitSeconds <= 15) 10 else if (queue.expectedWaitSeconds <= 35) 6 else 3
+        val resourceScore = if (!resourceReport.hasHallOrScheduleConflict) 15 else 6
+        val certainty = (auditScore + marginScore + capacityScore + queueSlaScore + resourceScore).coerceIn(45, 100)
+        val breakdown = CertaintyBreakdown(auditScore, marginScore, capacityScore, queueSlaScore, resourceScore)
+
+        val decisions = buildDecisions(
+            role = role,
+            alloc = alloc,
+            finance = finance,
+            knapsack = knapsack,
+            queue = queue,
+            resources = resourceReport,
+            channelOpt = channelOpt,
+            courseRecs = courseRecs,
+            priorityProfiles = priorityIds.mapNotNull { studentProfiles[it] },
+        )
 
         return SystemOperatingReport(
             certaintyScorePercent = certainty,
@@ -357,6 +368,11 @@ object OperationsResearchEngine {
             queueDispatch = queue,
             resourceConflict = resourceReport,
             decisions = decisions,
+            channelOptimization = channelOpt,
+            courseRecommendations = courseRecs,
+            studentProfiles = studentProfiles,
+            priorityStudentIds = priorityIds,
+            certaintyBreakdown = breakdown,
         )
     }
 
@@ -367,6 +383,9 @@ object OperationsResearchEngine {
         knapsack: StudyKnapsackResult,
         queue: QueueDispatchResult,
         resources: ResourceConflictReport,
+        channelOpt: PaymentChannelOptimization?,
+        courseRecs: List<CoursePriorityRecommendation>,
+        priorityProfiles: List<StudentOrProfile>,
     ): List<OperationalDecision> {
         val list = mutableListOf<OperationalDecision>()
         when (role) {
@@ -383,17 +402,24 @@ object OperationsResearchEngine {
                         priorityHigh = true,
                     )
                 }
-                list += OperationalDecision(
-                    titleAr = "مؤشر استقرار المتابعة والحضور",
-                    titleEn = "Attendance & Wallet Stability",
-                    detailAr = if (finance.pendingDuesPiasters > 0L) {
-                        "توجد متأخرات بسيطة في المجموعة — الشحن المبكر يحافظ على انتظام الحصص."
-                    } else {
-                        "الحسابات والالتزام الدراسي في نطاق آمن ومستقر بنسبة 100%."
-                    },
-                    detailEn = "Wallet & attendance coverage verified at 100% certainty.",
-                    verifiedFormula = "Audit OK · Certainty 100%",
-                )
+                courseRecs.firstOrNull { it.isTopPick }?.let { topCourse ->
+                    list += OperationalDecision(
+                        titleAr = "أولوية الدرس القادم",
+                        titleEn = "Top Recommended Lesson",
+                        detailAr = "${topCourse.reasonAr} · كفاءة ${topCourse.efficiencyPerMb} نقطة/MB.",
+                        detailEn = "${topCourse.reasonEn} · ${topCourse.efficiencyPerMb} pts/MB.",
+                        verifiedFormula = "Data-Opt #${topCourse.rank} · Score=${topCourse.priorityScore}",
+                    )
+                }
+                channelOpt?.let { opt ->
+                    list += OperationalDecision(
+                        titleAr = "القناة الأوفر للدفع والشحن",
+                        titleEn = "Lowest-Fee Payment Channel",
+                        detailAr = "${opt.reasonAr} المبلغ المقترح: ${EgyptValidators.formatPiasters(opt.recommendedAmountPiasters, "ar")}.",
+                        detailEn = "${opt.reasonEn} Suggested top-up: ${EgyptValidators.formatPiasters(opt.recommendedAmountPiasters, "en")}.",
+                        verifiedFormula = "Min-Fee=${EgyptValidators.formatPiasters(opt.optimalFeePiasters, "en")}",
+                    )
+                }
             }
             UserRole.TEACHER -> {
                 list += OperationalDecision(
@@ -404,13 +430,15 @@ object OperationsResearchEngine {
                     verifiedFormula = "BEP=${finance.breakEvenAttendance} · Split=${finance.splitPercentUsed}%",
                     priorityHigh = finance.marginOfSafetyPercent < 25,
                 )
-                if (alloc.recommendedSeatShift > 0 && alloc.bottleneckGroupAr != null && alloc.slackGroupAr != null) {
+                if (alloc.transferPlans.isNotEmpty()) {
+                    val totalShift = alloc.transferPlans.sumOf { it.seatsToMove }
+                    val first = alloc.transferPlans.first()
                     list += OperationalDecision(
-                        titleAr = "تخفيف ضغط القاعة الممتلئة",
-                        titleEn = "Rebalance Overcrowded Group",
-                        detailAr = "مجموعة «${alloc.bottleneckGroupAr}» وصلت ${alloc.bottleneckFillPercent}% — يُنصح بتحويل ${alloc.recommendedSeatShift} طلاب إلى «${alloc.slackGroupAr}».",
-                        detailEn = "${alloc.bottleneckGroupEn} is at ${alloc.bottleneckFillPercent}% — shift ${alloc.recommendedSeatShift} seats to ${alloc.slackGroupEn}.",
-                        verifiedFormula = "LP Shift=${alloc.recommendedSeatShift} seats",
+                        titleAr = "موازنة القاعات الممتلئة ($totalShift مقعد)",
+                        titleEn = "Multi-Hall Flow Rebalance ($totalShift seats)",
+                        detailAr = "مجموعة «${first.fromGroupAr}» وصلت ${alloc.bottleneckFillPercent}% — يُنصح بتحويل ${first.seatsToMove} طلاب إلى «${first.toGroupAr}».",
+                        detailEn = "${first.fromGroupEn} is at ${alloc.bottleneckFillPercent}% — shift ${first.seatsToMove} seats to ${first.toGroupEn}.",
+                        verifiedFormula = "Flow Balance=${alloc.balanceScorePercent}% · Shift=$totalShift",
                         priorityHigh = true,
                     )
                 }
@@ -427,27 +455,25 @@ object OperationsResearchEngine {
             }
             UserRole.SECRETARY -> {
                 list += OperationalDecision(
-                    titleAr = "توقع سرعة الطابور (${queue.activeLanes} مسار)",
-                    titleEn = "Queue Speed (${queue.activeLanes} lane(s))",
+                    titleAr = "طابور السلم (${queue.activeLanes} مسار · SLA ${queue.optimalLanesForSla})",
+                    titleEn = "Queue Dispatch (${queue.activeLanes} lane · SLA ${queue.optimalLanesForSla})",
                     detailAr = if (queue.recommendExtraLane) {
-                        "الضغط المتوقع ${queue.queueUtilizationPercent}% — فعّل وضع الساعة المزدحمة لخفض الانتظار."
+                        "احتمال الانتظار ${queue.erlangCWaitProbabilityPercent}% (${queue.expectedWaitSeconds} ث) — فعّل الساعة المزدحمة."
                     } else {
-                        "متوسط انتظار الطالب على السلم ${queue.expectedWaitSeconds} ثانية فقط (تدفق سلس)."
+                        "انتظار متوقع ${queue.expectedWaitSeconds} ثانية فقط باحتمال ازدحام ${queue.erlangCWaitProbabilityPercent}%."
                     },
-                    detailEn = "Expected stair wait time: ${queue.expectedWaitSeconds}s at ${queue.queueUtilizationPercent}% load.",
-                    verifiedFormula = "M/M/${queue.activeLanes} · Wq=${queue.expectedWaitSeconds}s",
+                    detailEn = "Erlang-C wait ${queue.expectedWaitSeconds}s (${queue.erlangCWaitProbabilityPercent}% wait prob, Lq=${queue.expectedQueueLengthStudents}).",
+                    verifiedFormula = "Erlang-C M/M/${queue.activeLanes} · Wq=${queue.expectedWaitSeconds}s",
                     priorityHigh = queue.recommendExtraLane,
                 )
+                val criticalCount = priorityProfiles.count { it.riskTier != StudentRiskTier.HEALTHY }
                 list += OperationalDecision(
-                    titleAr = "حالة تطابق الدفتر والخزينة",
-                    titleEn = "Cash Drawer Audit Status",
-                    detailAr = if (finance.ledgerBalanced) {
-                        "كل القيود المالية وسلسلة الإبطال متزنة 100% دون أي فروقات."
-                    } else {
-                        "يرجى مراجعة قيود الوردية قبل الإغلاق."
-                    },
-                    detailEn = if (finance.ledgerBalanced) "Immutable ledger & voids balanced 100%." else "Check shift entries before closing.",
-                    verifiedFormula = "Voids=${finance.voidChainCount} · Balanced=${finance.ledgerBalanced}",
+                    titleAr = "أولويات الاستقبال وتطابق الخزينة",
+                    titleEn = "Reception Triage & Ledger Audit",
+                    detailAr = "كفاءة التحصيل ${finance.collectionEfficiencyPercent}% · يوجد $criticalCount طلاب بحاجة لمتابعة أو تقسيط.",
+                    detailEn = "Collection efficiency ${finance.collectionEfficiencyPercent}% · $criticalCount student(s) flagged for triage.",
+                    verifiedFormula = "Collect=${finance.collectionEfficiencyPercent}% · Voids=${finance.voidRatioPercent}%",
+                    priorityHigh = finance.anomalyDetected || criticalCount > 0,
                 )
             }
         }

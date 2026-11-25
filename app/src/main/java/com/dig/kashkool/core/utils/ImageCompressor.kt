@@ -105,6 +105,43 @@ object ImageCompressor {
         return sample
     }
 
+    suspend fun decodeScaledBitmap(
+        context: Context,
+        sourceUri: Uri,
+        maxDim: Int = MAX_DIMENSION_PX,
+    ): Result<Bitmap> = withContext(Dispatchers.IO) {
+        runCatching {
+            val rawBytes = context.contentResolver.openInputStream(sourceUri)?.use { it.readBytes() }
+                ?: error("Could not read selected image")
+            decodeBytesScaled(rawBytes, maxDim)
+        }
+    }
+
+    suspend fun decodeFileScaled(
+        filePath: String,
+        maxDim: Int = MAX_DIMENSION_PX,
+    ): Result<Bitmap> = withContext(Dispatchers.IO) {
+        runCatching {
+            val rawBytes = File(filePath).readBytes()
+            decodeBytesScaled(rawBytes, maxDim)
+        }
+    }
+
+    private fun decodeBytesScaled(rawBytes: ByteArray, maxDim: Int): Bitmap {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            error("Unsupported image format")
+        }
+        val sampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, maxDim)
+        val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val sampled = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOpts)
+            ?: error("Could not decode image")
+        val scaled = scaleDownIfNeeded(sampled, maxDim)
+        if (scaled !== sampled) sampled.recycle()
+        return scaled
+    }
+
     private fun scaleDownIfNeeded(bitmap: Bitmap, maxDim: Int): Bitmap {
         val largest = max(bitmap.width, bitmap.height)
         if (largest <= maxDim) return bitmap

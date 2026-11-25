@@ -15,14 +15,11 @@ import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.FamilyRestroom
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +58,7 @@ import androidx.navigation.compose.rememberNavController
 import com.dig.kashkool.core.l10n.AppStrings
 import com.dig.kashkool.data.local.UserRole
 import com.dig.kashkool.ui.components.CosmicBackdrop
+import com.dig.kashkool.ui.screens.AttendanceDashboardScreen
 import com.dig.kashkool.ui.screens.CoursesAndQuizScreen
 import com.dig.kashkool.ui.screens.DashboardHomeScreen
 import com.dig.kashkool.ui.screens.LoginScreen
@@ -69,7 +67,6 @@ import com.dig.kashkool.ui.screens.SecretaryDeskScreen
 import com.dig.kashkool.ui.screens.StudyAssistantScreen
 import com.dig.kashkool.ui.screens.TeacherOpsScreen
 import com.dig.kashkool.ui.screens.WalletAndPaymentsScreen
-import com.dig.kashkool.ui.theme.CosmicBlack
 import com.dig.kashkool.ui.theme.NeonCyan
 import com.dig.kashkool.ui.theme.SpaceSurface
 import com.dig.kashkool.ui.theme.TextPrimary
@@ -146,7 +143,7 @@ private fun WorkspaceShell(
     val lang = state.language
     val tabs = remember(state.activeRole) { tabsForRole(state.activeRole) }
     var activeTabId by rememberSaveable(state.activeRole) { mutableStateOf("home") }
-    if (tabs.none { it.id == activeTabId }) {
+    if (activeTabId != "analytics" && tabs.none { it.id == activeTabId }) {
         activeTabId = "home"
     }
 
@@ -163,8 +160,6 @@ private fun WorkspaceShell(
         }
     }
 
-    var roleMenuExpanded by remember { mutableStateOf(false) }
-
     CosmicBackdrop {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val useRail = maxWidth >= 600.dp
@@ -176,7 +171,7 @@ private fun WorkspaceShell(
                 topBar = {
                     TopAppBar(
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = SpaceSurface.copy(alpha = 0.78f),
+                            containerColor = SpaceSurface.copy(alpha = 0.94f),
                             titleContentColor = TextPrimary,
                         ),
                         title = {
@@ -186,38 +181,6 @@ private fun WorkspaceShell(
                             )
                         },
                         actions = {
-                            Box {
-                                FilterChip(
-                                    selected = true,
-                                    onClick = { roleMenuExpanded = true },
-                                    modifier = Modifier.testTag("role_switcher_chip"),
-                                    label = {
-                                        Text(
-                                            text = AppStrings.t("role_${state.activeRole.key}", lang),
-                                            style = MaterialTheme.typography.labelMedium,
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = NeonCyan.copy(alpha = 0.16f),
-                                        selectedLabelColor = NeonCyan,
-                                    ),
-                                )
-                                DropdownMenu(
-                                    expanded = roleMenuExpanded,
-                                    onDismissRequest = { roleMenuExpanded = false },
-                                ) {
-                                    UserRole.entries.forEach { role ->
-                                        DropdownMenuItem(
-                                            text = { Text(AppStrings.t("role_${role.key}", lang)) },
-                                            onClick = {
-                                                roleMenuExpanded = false
-                                                viewModel.switchRole(role)
-                                                activeTabId = "home"
-                                            },
-                                        )
-                                    }
-                                }
-                            }
                             IconButton(
                                 onClick = viewModel::toggleLanguage,
                                 modifier = Modifier.testTag("shell_language_button"),
@@ -244,7 +207,7 @@ private fun WorkspaceShell(
                 bottomBar = {
                     if (!useRail) {
                         NavigationBar(
-                            containerColor = SpaceSurface.copy(alpha = 0.92f),
+                            containerColor = SpaceSurface.copy(alpha = 0.96f),
                         ) {
                             tabs.forEach { tab ->
                                 val selected = activeTabId == tab.id
@@ -265,9 +228,9 @@ private fun WorkspaceShell(
                                         )
                                     },
                                     colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = CosmicBlack,
+                                        selectedIconColor = NeonCyan,
                                         selectedTextColor = NeonCyan,
-                                        indicatorColor = NeonCyan,
+                                        indicatorColor = NeonCyan.copy(alpha = 0.14f),
                                         unselectedIconColor = TextSecondary,
                                         unselectedTextColor = TextSecondary,
                                     ),
@@ -284,7 +247,7 @@ private fun WorkspaceShell(
                 ) {
                     if (useRail) {
                         NavigationRail(
-                            containerColor = SpaceSurface.copy(alpha = 0.85f),
+                            containerColor = SpaceSurface.copy(alpha = 0.94f),
                         ) {
                             tabs.forEach { tab ->
                                 val selected = activeTabId == tab.id
@@ -301,9 +264,9 @@ private fun WorkspaceShell(
                                         Text(AppStrings.t(tab.labelKey, lang))
                                     },
                                     colors = NavigationRailItemDefaults.colors(
-                                        selectedIconColor = CosmicBlack,
+                                        selectedIconColor = NeonCyan,
                                         selectedTextColor = NeonCyan,
-                                        indicatorColor = NeonCyan,
+                                        indicatorColor = NeonCyan.copy(alpha = 0.14f),
                                         unselectedIconColor = TextSecondary,
                                         unselectedTextColor = TextSecondary,
                                     ),
@@ -317,7 +280,6 @@ private fun WorkspaceShell(
                             "home" -> DashboardHomeScreen(
                                 state = state,
                                 onNavigateTab = { target -> activeTabId = target },
-                                onSyncNow = viewModel::syncNow,
                                 onToggleStreakShield = viewModel::toggleStreakShield,
                                 onReviewRescueItem = { topic ->
                                     viewModel.askStudyAssistant(
@@ -327,7 +289,7 @@ private fun WorkspaceShell(
                                     activeTabId = "assistant"
                                 },
                                 onCompleteRescueItem = viewModel::completeRescueItem,
-                                onRequestOperationalBriefing = viewModel::requestOperationalBriefing,
+                                onQrCodeCopied = viewModel::notifyQrCopied,
                             )
                             "desk" -> SecretaryDeskScreen(
                                 state = state,
@@ -338,9 +300,17 @@ private fun WorkspaceShell(
                                 onDismissGeneratedQr = viewModel::dismissGeneratedQr,
                                 onToggleRushMode = viewModel::toggleRushMode,
                                 onDiscreetAllow = viewModel::discreetAllowWithParentNotice,
-                                onVerifyQrToken = viewModel::verifyGateQrToken,
                                 onAddWalkInStudent = viewModel::addWalkInStudent,
                                 onToggleBlockStudent = viewModel::toggleStudentBlocked,
+                                onComposeNotice = viewModel::composeSecretaryNotice,
+                                onDismissNotice = viewModel::dismissSecretaryNotice,
+                                onScanQrPayload = viewModel::scanQrForAttendance,
+                            )
+                            "analytics" -> AttendanceDashboardScreen(
+                                state = state,
+                                onSelectWindow = viewModel::setAttendanceWindow,
+                                onSelectChartMode = viewModel::setAttendanceChartMode,
+                                onSelectGroupFilter = viewModel::setAttendanceGroupFilter,
                             )
                             "teacher" -> TeacherOpsScreen(
                                 state = state,
@@ -358,6 +328,8 @@ private fun WorkspaceShell(
                                 onEvaluateTeacher = viewModel::evaluateTeacherPerformance,
                                 onEvaluateStudent = viewModel::evaluateStudentPerformance,
                                 buildEvaluationShareText = { eval -> viewModel.buildEvaluationShareText(eval, lang) },
+                                onGenerateLessonPlan = viewModel::generateTeacherLessonPlan,
+                                onOpenAttendanceDashboard = { activeTabId = "analytics" },
                             )
                             "courses" -> CoursesAndQuizScreen(
                                 state = state,
@@ -380,6 +352,7 @@ private fun WorkspaceShell(
                                 onResetAdaptiveQuiz = viewModel::resetAdaptiveQuiz,
                                 onEvaluateStudent = viewModel::evaluateStudentPerformance,
                                 buildEvaluationShareText = { eval -> viewModel.buildEvaluationShareText(eval, lang) },
+                                onGenerateRevisionDeck = viewModel::generateLessonRevisionDeck,
                             )
                             "wallet" -> WalletAndPaymentsScreen(
                                 state = state,
@@ -387,10 +360,13 @@ private fun WorkspaceShell(
                                 onVoidLedgerEntry = viewModel::voidLedgerEntry,
                                 onCompressReceipt = viewModel::compressAndAttachReceipt,
                                 onClearCompressedReceipt = viewModel::clearCompressedReceipt,
+                                onScanReceipt = viewModel::scanAttachedReceipt,
                             )
                             "assistant" -> StudyAssistantScreen(
                                 state = state,
-                                onSendPrompt = viewModel::askStudyAssistant,
+                                onSendPrompt = { prompt, photoUri ->
+                                    viewModel.askStudyAssistant(prompt = prompt, photoUri = photoUri)
+                                },
                             )
                             "parent" -> ParentPortalScreen(
                                 state = state,
@@ -401,6 +377,7 @@ private fun WorkspaceShell(
                                 onCheerCopied = viewModel::notifyMessageCopied,
                                 onEvaluateChild = viewModel::evaluateStudentPerformance,
                                 buildEvaluationShareText = { eval -> viewModel.buildEvaluationShareText(eval, lang) },
+                                onRefreshDigest = viewModel::refreshParentWeeklyDigest,
                             )
                         }
                     }
@@ -415,6 +392,7 @@ private fun tabsForRole(role: UserRole): List<WorkspaceTab> {
         UserRole.SECRETARY -> listOf(
             WorkspaceTab("home", "nav_home", Icons.Default.Home),
             WorkspaceTab("desk", "nav_desk", Icons.Default.PointOfSale),
+            WorkspaceTab("analytics", "nav_analytics", Icons.Default.Insights),
             WorkspaceTab("teacher", "nav_teacher", Icons.Default.Dashboard),
             WorkspaceTab("wallet", "nav_wallet", Icons.Default.AccountBalanceWallet),
         )

@@ -69,6 +69,7 @@ import com.dig.kashkool.core.l10n.AppStrings
 import com.dig.kashkool.data.local.PerformanceEvaluationEntity
 import com.dig.kashkool.ui.components.EvaluationCardMode
 import com.dig.kashkool.ui.components.FloatingGlassCard
+import com.dig.kashkool.ui.components.LessonRevisionDeckCard
 import com.dig.kashkool.ui.components.NeonButton
 import com.dig.kashkool.ui.components.PerformanceEvaluationCard
 import com.dig.kashkool.ui.components.StatusPill
@@ -85,6 +86,7 @@ import com.dig.kashkool.ui.theme.TextSecondary
 import com.dig.kashkool.ui.viewmodel.CourseUnit
 import com.dig.kashkool.ui.viewmodel.KashkoolUiState
 import com.dig.kashkool.ui.viewmodel.QuizQuestion
+import com.dig.kashkool.ui.viewmodel.RevisionDeckUiState
 import kotlin.math.roundToInt
 
 @Composable
@@ -102,6 +104,7 @@ fun CoursesAndQuizScreen(
     onResetAdaptiveQuiz: () -> Unit = {},
     onEvaluateStudent: (String?) -> Unit = {},
     buildEvaluationShareText: (PerformanceEvaluationEntity) -> String = { "" },
+    onGenerateRevisionDeck: (String, String) -> Unit = { _, _ -> },
 ) {
     val lang = state.language
     var showQuiz by rememberSaveable { mutableStateOf(false) }
@@ -116,12 +119,16 @@ fun CoursesAndQuizScreen(
             lowDataMode = state.lowDataMode,
             isCompleted = state.completedCourseIds.contains(activeUnit.id),
             lang = lang,
+            revisionDeckState = state.revisionDeckState,
             onToggleLowDataMode = onToggleLowDataMode,
             onCompleteLecture = onCompleteLecture,
             onGenerateQuizFromLesson = {
                 onCloseLecture()
                 showQuiz = true
                 onGenerateAdaptiveQuiz(state.activeLectureTitle)
+            },
+            onGenerateRevisionDeck = { summary ->
+                onGenerateRevisionDeck(state.activeLectureTitle, summary)
             },
             onBack = onCloseLecture,
             onAskHelper = { onAskStudyHelper(state.activeLectureTitle) },
@@ -133,8 +140,8 @@ fun CoursesAndQuizScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -156,12 +163,23 @@ fun CoursesAndQuizScreen(
         }
 
         if (!showQuiz) {
-            items(courses, key = { it.id }) { unit ->
+            val recByCourseId = state.operatingReport?.courseRecommendations?.associateBy { it.courseId }.orEmpty()
+            val prioritizedCourses = if (recByCourseId.isEmpty()) {
+                courses
+            } else {
+                courses.sortedBy { recByCourseId[it.id]?.rank ?: Int.MAX_VALUE }
+            }
+            items(prioritizedCourses, key = { it.id }) { unit ->
                 val title = if (lang == AppLanguage.AR) unit.titleAr else unit.titleEn
                 val grade = if (lang == AppLanguage.AR) unit.gradeAr else unit.gradeEn
                 val isCompleted = state.completedCourseIds.contains(unit.id)
+                val rec = recByCourseId[unit.id]
                 FloatingGlassCard(
-                    glowColor = if (isCompleted) EmeraldValid else ElectricBlue,
+                    glowColor = when {
+                        isCompleted -> EmeraldValid
+                        rec?.isTopPick == true -> SolarGold
+                        else -> ElectricBlue
+                    },
                     onClick = { onOpenLecture(unit) },
                     modifier = Modifier.fillMaxWidth().testTag("course_unit_${unit.id}"),
                 ) {
@@ -169,20 +187,33 @@ fun CoursesAndQuizScreen(
                         Icon(
                             imageVector = if (isCompleted) Icons.Default.CheckCircle else Icons.Default.PlayCircle,
                             contentDescription = title,
-                            tint = if (isCompleted) EmeraldValid else NeonCyan,
+                            tint = when {
+                                isCompleted -> EmeraldValid
+                                rec?.isTopPick == true -> SolarGold
+                                else -> NeonCyan
+                            },
                             modifier = Modifier.size(36.dp),
                         )
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(text = grade, style = MaterialTheme.typography.labelSmall, color = ElectricBlue)
                             Text(text = title, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
                             Text(
-                                text = "${unit.duration} · ${unit.dataEstimateMb} MB · ${AppStrings.t("drm_protected", lang)}",
+                                text = "${unit.duration} · ${AppStrings.t("drm_protected", lang)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = TextSecondary,
                             )
+                            if (rec != null && !isCompleted) {
+                                Text(
+                                    text = if (lang == AppLanguage.AR) rec.reasonAr else rec.reasonEn,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (rec.isTopPick) SolarGold else NeonCyan,
+                                )
+                            }
                         }
                         if (isCompleted) {
                             StatusPill(label = AppStrings.t("lesson_completed_badge", lang), color = EmeraldValid)
+                        } else if (rec?.isTopPick == true) {
+                            StatusPill(label = AppStrings.t("or_course_top_pick", lang), color = SolarGold)
                         }
                     }
                 }
@@ -256,9 +287,11 @@ private fun DrmLectureView(
     lowDataMode: Boolean,
     isCompleted: Boolean,
     lang: AppLanguage,
+    revisionDeckState: RevisionDeckUiState,
     onToggleLowDataMode: () -> Unit,
     onCompleteLecture: () -> Unit,
     onGenerateQuizFromLesson: () -> Unit,
+    onGenerateRevisionDeck: (String) -> Unit,
     onBack: () -> Unit,
     onAskHelper: () -> Unit,
 ) {
@@ -303,8 +336,8 @@ private fun DrmLectureView(
                     Text(text = "${AppStrings.t("lesson_progress", lang)}: ${(progress * 100).roundToInt()}%", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
                 }
                 Row(modifier = Modifier.align(Alignment.TopEnd), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(imageVector = Icons.Default.Security, contentDescription = null, tint = AmberDue.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
-                    Text(text = studentLabel, style = MaterialTheme.typography.labelSmall, color = AmberDue.copy(alpha = 0.7f))
+                    Icon(imageVector = Icons.Default.Security, contentDescription = null, tint = TextSecondary.copy(alpha = 0.45f), modifier = Modifier.size(14.dp))
+                    Text(text = studentLabel, style = MaterialTheme.typography.labelSmall, color = TextSecondary.copy(alpha = 0.45f))
                 }
             }
         }
@@ -335,6 +368,12 @@ private fun DrmLectureView(
                 }
             }
         }
+
+        LessonRevisionDeckCard(
+            deckState = revisionDeckState,
+            lang = lang,
+            onGenerateDeck = { onGenerateRevisionDeck(summaryText) },
+        )
 
         FilterChip(
             selected = lowDataMode,

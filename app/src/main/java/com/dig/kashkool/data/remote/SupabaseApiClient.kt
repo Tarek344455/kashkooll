@@ -60,9 +60,6 @@ class SupabaseApiClient {
     val supabaseAnonKey: String
         get() = BuildConfig.SUPABASE_ANON_KEY.trim()
 
-    val saviorGatewayUrl: String
-        get() = BuildConfig.SAVIOR_GATEWAY_URL.trim().trimEnd('/')
-
     val isSupabaseConfigured: Boolean
         get() = supabaseUrl.startsWith("https://") ||
             supabaseUrl.startsWith("http://localhost") ||
@@ -505,39 +502,6 @@ class SupabaseApiClient {
                 .build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) error("Reject RPC failed (${resp.code})")
-            }
-        }
-    }
-
-    suspend fun askStudyAssistant(
-        prompt: String,
-        role: String,
-        subject: String,
-    ): Result<String> = withContext(Dispatchers.IO) {
-        val gateway = saviorGatewayUrl
-        if (!gateway.startsWith("http")) {
-            return@withContext Result.failure(IllegalStateException("Gateway not configured"))
-        }
-        runCatching {
-            val payload = buildJsonObject {
-                put("role", role)
-                put("subject", subject)
-                put("prompt", prompt)
-            }
-            val req = Request.Builder()
-                .url("$gateway/v1/chat/completions")
-                .addHeader("Content-Type", "application/json")
-                .post(payload.toString().toRequestBody(jsonMediaType))
-                .build()
-            client.newCall(req).execute().use { resp ->
-                val body = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) error("Assistant request failed (${resp.code})")
-                val parsed = json.parseToJsonElement(body).jsonObject
-                val content = parsed["choices"]?.jsonArray?.firstOrNull()
-                    ?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.content
-                    ?: parsed["reply"]?.jsonPrimitive?.content
-                    ?: body
-                content
             }
         }
     }

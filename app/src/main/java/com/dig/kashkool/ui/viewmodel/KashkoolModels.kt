@@ -1,6 +1,14 @@
 package com.dig.kashkool.ui.viewmodel
 
+import com.dig.kashkool.core.analytics.AttendanceChartMode
+import com.dig.kashkool.core.analytics.AttendanceDashboardSnapshot
+import com.dig.kashkool.core.analytics.AttendanceWindow
 import com.dig.kashkool.core.firebase.AiOperationalBriefing
+import com.dig.kashkool.core.firebase.LessonRevisionDeck
+import com.dig.kashkool.core.firebase.ParentWeeklyDigest
+import com.dig.kashkool.core.firebase.ReceiptScanResult
+import com.dig.kashkool.core.firebase.SecretaryNoticeDraft
+import com.dig.kashkool.core.firebase.TeacherLessonPlan
 import com.dig.kashkool.core.l10n.AppLanguage
 import com.dig.kashkool.core.or.SystemOperatingReport
 import com.dig.kashkool.core.utils.CompressedReceiptResult
@@ -27,7 +35,9 @@ data class AuthUiState(
 
 data class ScanFeedback(
     val studentName: String,
-    val status: String, // "valid", "due", "blocked"
+    val status: String, // "valid", "due", "blocked", "already", "invalid"
+    val detail: String = "",
+    val alreadyCheckedIn: Boolean = false,
     val timestampMillis: Long = System.currentTimeMillis(),
 )
 
@@ -41,6 +51,7 @@ data class AssistantMessage(
     val fromUser: Boolean,
     val text: String,
     val suggestions: List<String> = emptyList(),
+    val attachedPhotoUri: String? = null,
 )
 
 data class QuizQuestion(
@@ -108,6 +119,41 @@ sealed interface EvaluationUiState {
     data class Error(val message: String) : EvaluationUiState
 }
 
+sealed interface ReceiptScanUiState {
+    data object Idle : ReceiptScanUiState
+    data object Loading : ReceiptScanUiState
+    data class Success(val result: ReceiptScanResult) : ReceiptScanUiState
+    data class Error(val message: String) : ReceiptScanUiState
+}
+
+sealed interface RevisionDeckUiState {
+    data object Idle : RevisionDeckUiState
+    data object Loading : RevisionDeckUiState
+    data class Success(val deck: LessonRevisionDeck) : RevisionDeckUiState
+    data class Error(val message: String) : RevisionDeckUiState
+}
+
+sealed interface ParentDigestUiState {
+    data object Idle : ParentDigestUiState
+    data object Loading : ParentDigestUiState
+    data class Success(val digest: ParentWeeklyDigest) : ParentDigestUiState
+    data class Error(val message: String) : ParentDigestUiState
+}
+
+sealed interface SecretaryNoticeUiState {
+    data object Idle : SecretaryNoticeUiState
+    data class Loading(val studentName: String) : SecretaryNoticeUiState
+    data class Success(val studentName: String, val draft: SecretaryNoticeDraft) : SecretaryNoticeUiState
+    data class Error(val studentName: String, val message: String) : SecretaryNoticeUiState
+}
+
+sealed interface TeacherPlanUiState {
+    data object Idle : TeacherPlanUiState
+    data object Loading : TeacherPlanUiState
+    data class Success(val plan: TeacherLessonPlan) : TeacherPlanUiState
+    data class Error(val message: String) : TeacherPlanUiState
+}
+
 data class KashkoolUiState(
     val loading: Boolean = true,
     val language: AppLanguage = AppLanguage.AR,
@@ -126,6 +172,11 @@ data class KashkoolUiState(
     val resources: List<Resource> = emptyList(),
     val qrToken: String = "",
     val qrSecondsRemaining: Int = 30,
+    val activeStudentQrToken: String = "",
+    val activeStudentCardCode: String = "",
+    val activeStudentCardPayload: String = "",
+    val activeStudentCheckedInToday: Boolean = false,
+    val scannerScanCount: Int = 0,
     val lastScanFeedback: ScanFeedback? = null,
     val qrVerificationBanner: QrVerificationBanner? = null,
     val snackbarMessage: String? = null,
@@ -159,6 +210,16 @@ data class KashkoolUiState(
     val aiBriefingState: AiBriefingState = AiBriefingState.Idle,
     val evaluations: List<PerformanceEvaluationEntity> = emptyList(),
     val evaluationState: EvaluationUiState = EvaluationUiState.Idle,
+    val receiptScanState: ReceiptScanUiState = ReceiptScanUiState.Idle,
+    val revisionDeckState: RevisionDeckUiState = RevisionDeckUiState.Idle,
+    val parentDigestState: ParentDigestUiState = ParentDigestUiState.Idle,
+    val secretaryNoticeState: SecretaryNoticeUiState = SecretaryNoticeUiState.Idle,
+    val teacherPlanState: TeacherPlanUiState = TeacherPlanUiState.Idle,
+    val studyBudgetMinutes: Int = 15,
+    val attendanceWindow: AttendanceWindow = AttendanceWindow.DAYS_14,
+    val attendanceChartMode: AttendanceChartMode = AttendanceChartMode.AREA_TREND,
+    val attendanceGroupFilter: String? = null,
+    val attendanceDashboard: AttendanceDashboardSnapshot? = null,
 )
 
 object KashkoolCatalog {

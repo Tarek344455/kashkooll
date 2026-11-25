@@ -225,4 +225,64 @@ object KashkoolSeeds {
             updatedAtMillis = nowMillis - 40_000L,
         ),
     )
+
+    fun initialAttendance(nowMillis: Long): List<AttendanceEntity> {
+        val day = 86_400_000L
+        val entries = mutableListOf<AttendanceEntity>()
+        val dayOffsets = listOf(13, 12, 10, 9, 7, 6, 5, 4, 3, 2, 1)
+        dayOffsets.forEachIndexed { idx, daysAgo ->
+            val baseTime = nowMillis - daysAgo * day
+            entries += AttendanceEntity(
+                id = "att-seed-stu1-$daysAgo",
+                studentId = "stu-1",
+                studentNameAr = "أحمد محمد علي",
+                studentNameEn = "Ahmed Mohamed Ali",
+                groupId = "grp-math-3sec",
+                sessionId = "sess-hist-$daysAgo",
+                feedbackStatus = "valid",
+                timestampMillis = baseTime - 3_600_000L,
+                syncStatus = "synced",
+            )
+            if (idx % 2 == 0 || daysAgo <= 5) {
+                entries += AttendanceEntity(
+                    id = "att-seed-stu2-$daysAgo",
+                    studentId = "stu-2",
+                    studentNameAr = "سارة خالد حسن",
+                    studentNameEn = "Sara Khaled Hassan",
+                    groupId = "grp-math-3sec",
+                    sessionId = "sess-hist-$daysAgo",
+                    feedbackStatus = if (daysAgo <= 3) "due" else "valid",
+                    timestampMillis = baseTime - 2_400_000L,
+                    syncStatus = "synced",
+                )
+            }
+            if (idx % 3 != 1 || daysAgo <= 4) {
+                entries += AttendanceEntity(
+                    id = "att-seed-stu3-$daysAgo",
+                    studentId = "stu-3",
+                    studentNameAr = "يوسف طارق إبراهيم",
+                    studentNameEn = "Youssef Tarek Ibrahim",
+                    groupId = "grp-phys-3sec",
+                    sessionId = "sess-hist-$daysAgo",
+                    feedbackStatus = "valid",
+                    timestampMillis = baseTime - 1_800_000L,
+                    syncStatus = "synced",
+                )
+            }
+            if (daysAgo in listOf(9, 4, 1)) {
+                entries += AttendanceEntity(
+                    id = "att-seed-stu4-$daysAgo",
+                    studentId = "stu-4",
+                    studentNameAr = "مريم عادل محمود",
+                    studentNameEn = "Mariam Adel Mahmoud",
+                    groupId = "grp-statics-2sec",
+                    sessionId = "sess-hist-$daysAgo",
+                    feedbackStatus = "blocked",
+                    timestampMillis = baseTime - 1_200_000L,
+                    syncStatus = "synced",
+                )
+            }
+        }
+        return entries
+    }
 }

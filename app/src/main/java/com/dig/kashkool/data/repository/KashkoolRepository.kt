@@ -8,7 +8,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.dig.kashkool.core.l10n.AppLanguage
+import com.dig.kashkool.core.utils.DynamicQrEngine
 import com.dig.kashkool.core.utils.EgyptValidators
+import com.dig.kashkool.core.utils.QrPayloadKind
+import com.dig.kashkool.core.utils.QrVerifyStatus
 import com.dig.kashkool.data.local.AppDatabase
 import com.dig.kashkool.data.local.AttendanceEntity
 import com.dig.kashkool.data.local.AvailabilityStatus
@@ -39,6 +42,23 @@ data class SyncReport(
     val syncedItems: Int,
     val failedItems: Int,
     val isOffline: Boolean,
+)
+
+enum class QrCheckInOutcome {
+    CHECKED_IN_VALID,
+    CHECKED_IN_DUE,
+    BLOCKED,
+    ALREADY_CHECKED_IN,
+    SESSION_GATE_VALID,
+    EXPIRED_TOKEN,
+    INVALID_TOKEN,
+    STUDENT_NOT_FOUND,
+}
+
+data class AutomatedQrCheckInResult(
+    val outcome: QrCheckInOutcome,
+    val student: StudentEntity? = null,
+    val tokenPreview: String = "",
 )
 
 class KashkoolRepository(
@@ -92,6 +112,9 @@ class KashkoolRepository(
     val groupsFlow: Flow<List<GroupEntity>> = dao.observeGroups()
     val studentsFlow: Flow<List<StudentEntity>> = dao.observeStudents()
     val attendanceFlow: Flow<List<AttendanceEntity>> = dao.observeAttendance()
+    fun observeAttendanceSince(sinceMillis: Long): Flow<List<AttendanceEntity>> =
+        dao.observeAttendanceSince(sinceMillis)
+
     val ledgerFlow: Flow<List<LedgerEntryEntity>> = dao.observeLedgerEntries()
     val activeChannelsFlow: Flow<List<PaymentChannelEntity>> = dao.observeActiveChannels()
     val allChannelsFlow: Flow<List<PaymentChannelEntity>> = dao.observeAllChannels()
@@ -241,6 +264,9 @@ class KashkoolRepository(
         dao.insertChannelsIfAbsent(KashkoolSeeds.channels)
         dao.insertLedgerEntriesIfAbsent(KashkoolSeeds.initialLedgerEntries(now))
         dao.insertResourcesIfAbsent(KashkoolSeeds.initialResources(now))
+        if (dao.getAttendanceCount() == 0) {
+            dao.insertAttendanceIfAbsent(KashkoolSeeds.initialAttendance(now))
+        }
     }
 
     suspend fun saveEvaluation(evaluation: PerformanceEvaluationEntity) {
@@ -392,6 +418,48 @@ class KashkoolRepository(
             dao.upsertStudent(student.copy(streakDays = student.streakDays + 1))
         }
         return status
+    }
+
+    suspend fun processAutomatedQrScan(
+        rawPayload: String,
+        qrEngine: DynamicQrEngine,
+        sessionId: String = "sess-nokhba-today",
+    ): AutomatedQrCheckInResult {
+        val preview = rawPayload.trim().take(28)
+        val verified = qrEngine.verifyScannedPayload(rawPayload)
+        if (verified.status == QrVerifyStatus.EXPIRED) {
+            return AutomatedQrCheckInResult(QrCheckInOutcome.EXPIRED_TOKEN, tokenPreview = preview)
+        }
+        if (verified.status == QrVerifyStatus.INVALID) {
+            return AutomatedQrCheckInResult(QrCheckInOutcome.INVALID_TOKEN, tokenPreview = preview)
+        }
+        if (verified.kind == QrPayloadKind.SESSION_GATE) {
+            return AutomatedQrCheckInResult(QrCheckInOutcome.SESSION_GATE_VALID, tokenPreview = preview)
+        }
+        val resolvedStudent = verified.studentId?.let { dao.getStudentById(it) }
+            ?: verified.activationCode?.let { dao.getStudentByQrCode(it) }
+            ?: return AutomatedQrCheckInResult(QrCheckInOutcome.STUDENT_NOT_FOUND, tokenPreview = preview)
+
+        if (resolvedStudent.isBlocked) {
+            recordQuickCheckIn(resolvedStudent, sessionId)
+            return AutomatedQrCheckInResult(QrCheckInOutcome.BLOCKED, resolvedStudent, preview)
+        }
+
+        val startOfDay = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val existing = dao.getAttendanceForStudentInSessionSince(resolvedStudent.id, sessionId, startOfDay)
+        if (existing != null && existing.feedbackStatus != "blocked") {
+            return AutomatedQrCheckInResult(QrCheckInOutcome.ALREADY_CHECKED_IN, resolvedStudent, preview)
+        }
+
+        val status = recordQuickCheckIn(resolvedStudent, sessionId)
+        val outcome = if (status == "due") QrCheckInOutcome.CHECKED_IN_DUE else QrCheckInOutcome.CHECKED_IN_VALID
+        return AutomatedQrCheckInResult(outcome, resolvedStudent, preview)
     }
 
     suspend fun appendFinancialEntry(

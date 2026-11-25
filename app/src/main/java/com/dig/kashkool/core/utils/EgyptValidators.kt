@@ -73,8 +73,23 @@ object EgyptValidators {
 
 enum class QrVerifyStatus { VALID, EXPIRED, INVALID }
 
+enum class QrPayloadKind {
+    STUDENT_DYNAMIC,
+    STUDENT_CARD,
+    SESSION_GATE,
+    UNKNOWN,
+}
+
 data class QrVerifyResult(
     val status: QrVerifyStatus,
+    val sessionId: String? = null,
+)
+
+data class StudentQrVerifyResult(
+    val status: QrVerifyStatus,
+    val kind: QrPayloadKind,
+    val studentId: String? = null,
+    val activationCode: String? = null,
     val sessionId: String? = null,
 )
 
@@ -83,8 +98,7 @@ class DynamicQrEngine(
     private val sessionSecret: String,
     private val windowSeconds: Long = 30L,
 ) {
-    private fun signatureForBucket(targetSessionId: String, bucket: Long): String {
-        val payload = "$targetSessionId:$bucket"
+    private fun hmacHex(payload: String): String {
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(sessionSecret.toByteArray(StandardCharsets.UTF_8), "HmacSHA256"))
         return mac.doFinal(payload.toByteArray(StandardCharsets.UTF_8))
@@ -92,10 +106,30 @@ class DynamicQrEngine(
             .joinToString("") { "%02x".format(it) }
     }
 
+    private fun signatureForBucket(targetSessionId: String, bucket: Long): String =
+        hmacHex("$targetSessionId:$bucket")
+
+    private fun studentSignatureForBucket(studentId: String, targetSessionId: String, bucket: Long): String =
+        hmacHex("student:$studentId:$targetSessionId:$bucket")
+
     fun tokenAt(epochSeconds: Long = System.currentTimeMillis() / 1000L): String {
         val bucket = epochSeconds / windowSeconds
         val sig = signatureForBucket(sessionId, bucket)
         return "KSH|$sessionId|$bucket|$sig"
+    }
+
+    fun studentTokenAt(
+        studentId: String,
+        epochSeconds: Long = System.currentTimeMillis() / 1000L,
+    ): String {
+        val bucket = epochSeconds / windowSeconds
+        val sig = studentSignatureForBucket(studentId, sessionId, bucket)
+        return "KSHS|$studentId|$sessionId|$bucket|$sig"
+    }
+
+    fun cardPayloadFor(studentId: String, activationCode: String): String {
+        val clean = EgyptValidators.normalizeQrCode(activationCode)
+        return "KSHC|$studentId|$clean"
     }
 
     fun secondsRemaining(epochSeconds: Long = System.currentTimeMillis() / 1000L): Int {
@@ -127,5 +161,89 @@ class DynamicQrEngine(
         } else {
             QrVerifyResult(QrVerifyStatus.EXPIRED, tokenSession)
         }
+    }
+
+    fun verifyScannedPayload(
+        rawPayload: String,
+        epochSeconds: Long = System.currentTimeMillis() / 1000L,
+    ): StudentQrVerifyResult {
+        val trimmed = rawPayload.trim()
+        if (trimmed.isEmpty()) {
+            return StudentQrVerifyResult(QrVerifyStatus.INVALID, QrPayloadKind.UNKNOWN)
+        }
+        if (trimmed.startsWith("KSHS|")) {
+            val parts = trimmed.split("|")
+            if (parts.size != 5) {
+                return StudentQrVerifyResult(QrVerifyStatus.INVALID, QrPayloadKind.STUDENT_DYNAMIC)
+            }
+            val studentId = parts[1].trim()
+            val tokenSession = parts[2].trim()
+            val tokenBucket = parts[3].toLongOrNull()
+                ?: return StudentQrVerifyResult(QrVerifyStatus.INVALID, QrPayloadKind.STUDENT_DYNAMIC, studentId = studentId)
+            val tokenSig = parts[4].trim()
+            if (studentId.isBlank() || tokenSession != sessionId) {
+                return StudentQrVerifyResult(
+                    status = QrVerifyStatus.INVALID,
+                    kind = QrPayloadKind.STUDENT_DYNAMIC,
+                    studentId = studentId.ifBlank { null },
+                    sessionId = tokenSession,
+                )
+            }
+            val expectedSig = studentSignatureForBucket(studentId, tokenSession, tokenBucket)
+            if (!expectedSig.equals(tokenSig, ignoreCase = true)) {
+                return StudentQrVerifyResult(
+                    status = QrVerifyStatus.INVALID,
+                    kind = QrPayloadKind.STUDENT_DYNAMIC,
+                    studentId = studentId,
+                    sessionId = tokenSession,
+                )
+            }
+            val currentBucket = epochSeconds / windowSeconds
+            val status = if (tokenBucket == currentBucket || tokenBucket == currentBucket - 1L) {
+                QrVerifyStatus.VALID
+            } else {
+                QrVerifyStatus.EXPIRED
+            }
+            return StudentQrVerifyResult(
+                status = status,
+                kind = QrPayloadKind.STUDENT_DYNAMIC,
+                studentId = studentId,
+                sessionId = tokenSession,
+            )
+        }
+        if (trimmed.startsWith("KSHC|")) {
+            val parts = trimmed.split("|")
+            if (parts.size != 3) {
+                return StudentQrVerifyResult(QrVerifyStatus.INVALID, QrPayloadKind.STUDENT_CARD)
+            }
+            val studentId = parts[1].trim()
+            val cleanCode = EgyptValidators.normalizeQrCode(parts[2])
+            return if (studentId.isNotBlank() && EgyptValidators.isValidQrActivationCode(cleanCode)) {
+                StudentQrVerifyResult(
+                    status = QrVerifyStatus.VALID,
+                    kind = QrPayloadKind.STUDENT_CARD,
+                    studentId = studentId,
+                    activationCode = cleanCode,
+                )
+            } else {
+                StudentQrVerifyResult(QrVerifyStatus.INVALID, QrPayloadKind.STUDENT_CARD)
+            }
+        }
+        if (trimmed.startsWith("KSH|")) {
+            val gate = verifyToken(trimmed, epochSeconds)
+            return StudentQrVerifyResult(
+                status = gate.status,
+                kind = QrPayloadKind.SESSION_GATE,
+                sessionId = gate.sessionId,
+            )
+        }
+        if (EgyptValidators.isValidQrActivationCode(trimmed)) {
+            return StudentQrVerifyResult(
+                status = QrVerifyStatus.VALID,
+                kind = QrPayloadKind.STUDENT_CARD,
+                activationCode = EgyptValidators.normalizeQrCode(trimmed),
+            )
+        }
+        return StudentQrVerifyResult(QrVerifyStatus.INVALID, QrPayloadKind.UNKNOWN)
     }
 }

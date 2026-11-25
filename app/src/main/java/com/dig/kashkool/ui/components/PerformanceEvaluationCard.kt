@@ -126,10 +126,6 @@ fun PerformanceEvaluationCard(
                         color = TextPrimary,
                     )
                 }
-                StatusPill(
-                    label = AppStrings.t("zero_fee", lang),
-                    color = EmeraldValid,
-                )
             }
 
             if (mode == EvaluationCardMode.TEACHER_CONSOLE && students.isNotEmpty()) {

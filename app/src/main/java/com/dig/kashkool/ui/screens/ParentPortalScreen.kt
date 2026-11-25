@@ -1,5 +1,6 @@
 package com.dig.kashkool.ui.screens
 
+import android.content.ClipData
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,14 +11,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.EventNote
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.automirrored.filled.EventNote
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -25,13 +28,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.dig.kashkool.core.l10n.AppLanguage
@@ -54,6 +58,8 @@ import com.dig.kashkool.ui.theme.SolarGold
 import com.dig.kashkool.ui.theme.TextPrimary
 import com.dig.kashkool.ui.theme.TextSecondary
 import com.dig.kashkool.ui.viewmodel.KashkoolUiState
+import com.dig.kashkool.ui.viewmodel.ParentDigestUiState
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -68,12 +74,15 @@ fun ParentPortalScreen(
     onCheerCopied: () -> Unit = {},
     onEvaluateChild: (String?) -> Unit = {},
     buildEvaluationShareText: (PerformanceEvaluationEntity) -> String = { "" },
+    onRefreshDigest: () -> Unit = {},
 ) {
     val lang = state.language
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val student = state.students.firstOrNull()
-    val coveredSessions = ((student?.walletBalancePiasters ?: 24000L) / 8000L).toInt()
+    val childOr = student?.let { state.operatingReport?.studentProfiles?.get(it.id) }
+    val coveredSessions = childOr?.coveredSessions ?: ((student?.walletBalancePiasters ?: 24000L) / 8000L).toInt()
     val timeFormatter = remember { SimpleDateFormat("dd MMM · h:mm a", Locale.US) }
 
     val studentTimeline = remember(state.attendance, student?.id) {
@@ -83,13 +92,13 @@ fun ParentPortalScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         if (student != null) {
             item {
-                FloatingGlassCard(glowColor = NeonCyan, modifier = Modifier.fillMaxWidth()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                FloatingGlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -98,9 +107,9 @@ fun ParentPortalScreen(
                                 imageVector = Icons.Default.School,
                                 contentDescription = null,
                                 tint = NeonCyan,
-                                modifier = Modifier.size(36.dp),
+                                modifier = Modifier.size(34.dp),
                             )
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(
                                     text = if (lang == AppLanguage.AR) student.nameAr else student.nameEn,
                                     style = MaterialTheme.typography.titleLarge,
@@ -152,14 +161,21 @@ fun ParentPortalScreen(
                                 Text(
                                     text = AppStrings.t("share_whatsapp", lang),
                                     color = TextPrimary,
+                                    maxLines = 1,
                                 )
                             }
                         }
 
                         OutlinedButton(
                             onClick = {
-                                val cheer = buildCheerMessage(lang)
-                                clipboard.setText(AnnotatedString(cheer))
+                                val dynamicCheer = (state.parentDigestState as? ParentDigestUiState.Success)
+                                    ?.digest?.cheerMessage?.takeIf { it.isNotBlank() }
+                                val cheer = dynamicCheer ?: buildCheerMessage(lang)
+                                scope.launch {
+                                    clipboard.setClipEntry(
+                                        ClipEntry(ClipData.newPlainText("cheer", cheer))
+                                    )
+                                }
                                 onCheerCopied()
                             },
                             modifier = Modifier
@@ -208,17 +224,101 @@ fun ParentPortalScreen(
 
         item {
             FloatingGlassCard(glowColor = SolarGold, modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = AppStrings.t("parent_digest_title", lang),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = SolarGold,
-                    )
-                    Text(
-                        text = AppStrings.t("parent_digest_body", lang),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextPrimary,
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = AppStrings.t("parent_digest_title", lang),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = SolarGold,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedButton(
+                            onClick = onRefreshDigest,
+                            enabled = state.parentDigestState !is ParentDigestUiState.Loading,
+                            modifier = Modifier.testTag("parent_digest_refresh_button"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                tint = SolarGold,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(AppStrings.t("parent_digest_refresh", lang), color = SolarGold)
+                        }
+                    }
+                    when (val digestState = state.parentDigestState) {
+                        ParentDigestUiState.Idle -> {
+                            Text(
+                                text = AppStrings.t("parent_digest_body", lang),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextPrimary,
+                            )
+                        }
+                        ParentDigestUiState.Loading -> {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = SolarGold,
+                                    strokeWidth = 2.dp,
+                                )
+                                Text(
+                                    text = AppStrings.t("parent_digest_loading", lang),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = SolarGold,
+                                )
+                            }
+                        }
+                        is ParentDigestUiState.Error -> {
+                            Text(
+                                text = AppStrings.t("parent_digest_error", lang),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = AmberDue,
+                            )
+                            Text(
+                                text = AppStrings.t("parent_digest_body", lang),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextPrimary,
+                            )
+                        }
+                        is ParentDigestUiState.Success -> {
+                            val d = digestState.digest
+                            if (d.headline.isNotBlank()) {
+                                Text(
+                                    text = d.headline,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = NeonCyan,
+                                )
+                            }
+                            Text(
+                                text = d.weeklyNarrative,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextPrimary,
+                            )
+                            if (d.homeSupportTip.isNotBlank()) {
+                                FloatingGlassCard(glowColor = EmeraldValid, modifier = Modifier.fillMaxWidth()) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = AppStrings.t("parent_home_tip", lang),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = EmeraldValid,
+                                        )
+                                        Text(
+                                            text = d.homeSupportTip,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextPrimary,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

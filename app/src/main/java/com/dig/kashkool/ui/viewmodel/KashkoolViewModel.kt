@@ -5,15 +5,21 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.dig.kashkool.core.analytics.AttendanceAnalyticsEngine
+import com.dig.kashkool.core.analytics.AttendanceChartMode
+import com.dig.kashkool.core.analytics.AttendanceWindow
+import com.dig.kashkool.core.firebase.AiAcademicToolkit
 import com.dig.kashkool.core.firebase.AiOperationsAdvisor
 import com.dig.kashkool.core.l10n.AppLanguage
 import com.dig.kashkool.core.l10n.AppStrings
+import com.dig.kashkool.core.or.CourseCandidate
 import com.dig.kashkool.core.or.OperationsResearchEngine
 import com.dig.kashkool.core.or.StudyCandidate
 import com.dig.kashkool.core.utils.CompressedReceiptResult
 import com.dig.kashkool.core.utils.DynamicQrEngine
 import com.dig.kashkool.core.utils.EgyptValidators
 import com.dig.kashkool.core.utils.ImageCompressor
+import com.dig.kashkool.core.utils.QrVerifyStatus
 import com.dig.kashkool.data.local.AttendanceEntity
 import com.dig.kashkool.data.local.GroupEntity
 import com.dig.kashkool.data.local.LedgerEntryEntity
@@ -27,6 +33,7 @@ import com.dig.kashkool.data.local.StudentEntity
 import com.dig.kashkool.data.local.SubmissionStatus
 import com.dig.kashkool.data.local.UserRole
 import com.dig.kashkool.data.repository.KashkoolRepository
+import com.dig.kashkool.data.repository.QrCheckInOutcome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
@@ -45,6 +52,7 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
 
     private val repo = KashkoolRepository(application)
     private val aiAdvisor = AiOperationsAdvisor()
+    private val aiToolkit = AiAcademicToolkit()
     private val qrEngine = DynamicQrEngine(
         sessionId = "sess-nokhba-today",
         sessionSecret = "kashkool-local-session-hmac-secret-2026",
@@ -67,6 +75,8 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
         val auth: AuthUiState = AuthUiState(),
         val qrToken: String = "",
         val qrSecondsRemaining: Int = 30,
+        val qrEpochSeconds: Long = System.currentTimeMillis() / 1000L,
+        val scannerScanCount: Int = 0,
         val lastScanFeedback: ScanFeedback? = null,
         val qrVerificationBanner: QrVerificationBanner? = null,
         val snackbarMessage: String? = null,
@@ -88,6 +98,15 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
         val rushModeEnabled: Boolean = false,
         val aiBriefingState: AiBriefingState = AiBriefingState.Idle,
         val evaluationState: EvaluationUiState = EvaluationUiState.Idle,
+        val receiptScanState: ReceiptScanUiState = ReceiptScanUiState.Idle,
+        val revisionDeckState: RevisionDeckUiState = RevisionDeckUiState.Idle,
+        val parentDigestState: ParentDigestUiState = ParentDigestUiState.Idle,
+        val secretaryNoticeState: SecretaryNoticeUiState = SecretaryNoticeUiState.Idle,
+        val teacherPlanState: TeacherPlanUiState = TeacherPlanUiState.Idle,
+        val studyBudgetMinutes: Int = 15,
+        val attendanceWindow: AttendanceWindow = AttendanceWindow.DAYS_14,
+        val attendanceChartMode: AttendanceChartMode = AttendanceChartMode.AREA_TREND,
+        val attendanceGroupFilter: String? = null,
     )
 
     private data class DbBundle(
@@ -233,6 +252,14 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
             netDrawerCashPiasters = (cashTotal - voidTotal).coerceAtLeast(0L),
         )
 
+        val courseCandidates = courses.map {
+            CourseCandidate(
+                id = it.id,
+                titleAr = it.titleAr,
+                titleEn = it.titleEn,
+                dataEstimateMb = it.dataEstimateMb,
+            )
+        }
         val report = OperationsResearchEngine.evaluateSystem(
             role = prefs.role,
             groups = db.groups,
@@ -245,6 +272,46 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
             resources = db.resources,
             assistantWagesPiasters = extra.assistantWagesPiasters,
             splitPercentOverride = extra.splitPercent,
+            channels = db.channels,
+            courses = courseCandidates,
+            completedCourseIds = extra.completedCourseIds,
+            lowDataMode = prefs.dataSaver,
+            studyBudgetMinutes = tr.studyBudgetMinutes,
+        )
+
+        val qrCodeFromLabel = Regex("QR:([A-Za-z0-9]+)").find(prefs.userLabel)?.groupValues?.getOrNull(1)
+        val activeStudent = qrCodeFromLabel?.let { code ->
+            db.students.firstOrNull { it.qrActivationCode.equals(code, ignoreCase = true) }
+        } ?: db.students.firstOrNull { it.id == "stu-1" } ?: db.students.firstOrNull()
+
+        val activeStudentQrToken = activeStudent?.let {
+            qrEngine.studentTokenAt(it.id, tr.qrEpochSeconds)
+        }.orEmpty()
+        val activeStudentCardCode = activeStudent?.qrActivationCode.orEmpty()
+        val activeStudentCardPayload = if (activeStudent != null && activeStudentCardCode.isNotBlank()) {
+            qrEngine.cardPayloadFor(activeStudent.id, activeStudentCardCode)
+        } else {
+            ""
+        }
+        val startOfDayMillis = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val activeStudentCheckedInToday = activeStudent != null && db.attendance.any {
+            it.studentId == activeStudent.id &&
+                it.sessionId == "sess-nokhba-today" &&
+                it.timestampMillis >= startOfDayMillis &&
+                it.feedbackStatus != "blocked"
+        }
+
+        val attendanceDashboard = AttendanceAnalyticsEngine.compute(
+            attendance = db.attendance,
+            groups = db.groups,
+            students = db.students,
+            window = tr.attendanceWindow,
+            selectedGroupId = tr.attendanceGroupFilter,
         )
 
         KashkoolUiState(
@@ -265,6 +332,11 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
             resources = db.resources,
             qrToken = tr.qrToken,
             qrSecondsRemaining = tr.qrSecondsRemaining,
+            activeStudentQrToken = activeStudentQrToken,
+            activeStudentCardCode = activeStudentCardCode,
+            activeStudentCardPayload = activeStudentCardPayload,
+            activeStudentCheckedInToday = activeStudentCheckedInToday,
+            scannerScanCount = tr.scannerScanCount,
             lastScanFeedback = tr.lastScanFeedback,
             qrVerificationBanner = tr.qrVerificationBanner,
             snackbarMessage = tr.snackbarMessage,
@@ -297,6 +369,16 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
             aiBriefingState = tr.aiBriefingState,
             evaluations = db.evaluations,
             evaluationState = tr.evaluationState,
+            receiptScanState = tr.receiptScanState,
+            revisionDeckState = tr.revisionDeckState,
+            parentDigestState = tr.parentDigestState,
+            secretaryNoticeState = tr.secretaryNoticeState,
+            teacherPlanState = tr.teacherPlanState,
+            studyBudgetMinutes = tr.studyBudgetMinutes,
+            attendanceWindow = tr.attendanceWindow,
+            attendanceChartMode = tr.attendanceChartMode,
+            attendanceGroupFilter = tr.attendanceGroupFilter,
+            attendanceDashboard = attendanceDashboard,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -316,6 +398,7 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
                     it.copy(
                         qrToken = qrEngine.tokenAt(nowSec),
                         qrSecondsRemaining = qrEngine.secondsRemaining(nowSec),
+                        qrEpochSeconds = nowSec,
                     )
                 }
                 delay(1000L)
@@ -429,10 +512,150 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun notifyQrCopied() {
+        transientState.update { it.copy(snackbarMessage = AppStrings.t("student_qr_copied", uiState.value.language)) }
+    }
+
+    fun setAttendanceWindow(window: AttendanceWindow) {
+        transientState.update { it.copy(attendanceWindow = window) }
+    }
+
+    fun setAttendanceChartMode(mode: AttendanceChartMode) {
+        transientState.update { it.copy(attendanceChartMode = mode) }
+    }
+
+    fun setAttendanceGroupFilter(groupId: String?) {
+        transientState.update { it.copy(attendanceGroupFilter = groupId) }
+    }
+
     fun verifyGateQrToken(rawToken: String) {
-        val result = qrEngine.verifyToken(rawToken)
+        val trimmed = rawToken.trim()
+        if (trimmed.startsWith("KSHS|") || trimmed.startsWith("KSHC|") || EgyptValidators.isValidQrActivationCode(trimmed)) {
+            scanQrForAttendance(trimmed)
+            return
+        }
+        val result = qrEngine.verifyToken(trimmed)
         transientState.update {
-            it.copy(qrVerificationBanner = QrVerificationBanner(result.status, rawToken.trim().take(28)))
+            it.copy(qrVerificationBanner = QrVerificationBanner(result.status, trimmed.take(28)))
+        }
+    }
+
+    fun scanQrForAttendance(rawPayload: String) = viewModelScope.launch {
+        val lang = uiState.value.language
+        val result = repo.processAutomatedQrScan(rawPayload, qrEngine)
+        val studentName = result.student?.let {
+            if (lang == AppLanguage.AR) it.nameAr else it.nameEn
+        }
+        when (result.outcome) {
+            QrCheckInOutcome.CHECKED_IN_VALID -> {
+                val name = studentName ?: ""
+                transientState.update {
+                    it.copy(
+                        scannerScanCount = it.scannerScanCount + 1,
+                        lastScanFeedback = ScanFeedback(
+                            studentName = name,
+                            status = "valid",
+                            detail = AppStrings.t("scan_valid", lang),
+                        ),
+                        qrVerificationBanner = QrVerificationBanner(QrVerifyStatus.VALID, result.tokenPreview),
+                        snackbarMessage = if (lang == AppLanguage.AR) "تم تسجيل حضور $name" else "Checked in $name",
+                    )
+                }
+            }
+            QrCheckInOutcome.CHECKED_IN_DUE -> {
+                val name = studentName ?: ""
+                val dueFormatted = result.student?.let {
+                    EgyptValidators.formatPiasters(it.dueBalancePiasters, lang.code)
+                }.orEmpty()
+                transientState.update {
+                    it.copy(
+                        scannerScanCount = it.scannerScanCount + 1,
+                        lastScanFeedback = ScanFeedback(
+                            studentName = name,
+                            status = "due",
+                            detail = "${AppStrings.t("due_balance", lang)}: $dueFormatted",
+                        ),
+                        qrVerificationBanner = QrVerificationBanner(QrVerifyStatus.VALID, result.tokenPreview),
+                        snackbarMessage = if (lang == AppLanguage.AR) "تم حضور $name · متبقي $dueFormatted" else "$name checked in · Due $dueFormatted",
+                    )
+                }
+            }
+            QrCheckInOutcome.ALREADY_CHECKED_IN -> {
+                val name = studentName ?: ""
+                transientState.update {
+                    it.copy(
+                        lastScanFeedback = ScanFeedback(
+                            studentName = name,
+                            status = "already",
+                            detail = AppStrings.t("qr_already_checked_in", lang),
+                            alreadyCheckedIn = true,
+                        ),
+                        qrVerificationBanner = QrVerificationBanner(QrVerifyStatus.VALID, result.tokenPreview),
+                        snackbarMessage = "$name · ${AppStrings.t("qr_already_checked_in", lang)}",
+                    )
+                }
+            }
+            QrCheckInOutcome.BLOCKED -> {
+                val name = studentName ?: ""
+                transientState.update {
+                    it.copy(
+                        lastScanFeedback = ScanFeedback(
+                            studentName = name,
+                            status = "blocked",
+                            detail = AppStrings.t("scan_blocked", lang),
+                        ),
+                        qrVerificationBanner = QrVerificationBanner(QrVerifyStatus.INVALID, result.tokenPreview),
+                        snackbarMessage = "$name · ${AppStrings.t("scan_blocked", lang)}",
+                    )
+                }
+            }
+            QrCheckInOutcome.SESSION_GATE_VALID -> {
+                transientState.update {
+                    it.copy(
+                        qrVerificationBanner = QrVerificationBanner(QrVerifyStatus.VALID, result.tokenPreview),
+                        snackbarMessage = AppStrings.t("qr_result_valid", lang),
+                    )
+                }
+            }
+            QrCheckInOutcome.EXPIRED_TOKEN -> {
+                transientState.update {
+                    it.copy(
+                        lastScanFeedback = ScanFeedback(
+                            studentName = AppStrings.t("qr_result_expired", lang),
+                            status = "due",
+                            detail = result.tokenPreview,
+                        ),
+                        qrVerificationBanner = QrVerificationBanner(QrVerifyStatus.EXPIRED, result.tokenPreview),
+                        snackbarMessage = AppStrings.t("qr_result_expired", lang),
+                    )
+                }
+            }
+            QrCheckInOutcome.STUDENT_NOT_FOUND -> {
+                transientState.update {
+                    it.copy(
+                        lastScanFeedback = ScanFeedback(
+                            studentName = AppStrings.t("qr_student_not_found", lang),
+                            status = "blocked",
+                            detail = result.tokenPreview,
+                        ),
+                        qrVerificationBanner = QrVerificationBanner(QrVerifyStatus.INVALID, result.tokenPreview),
+                        snackbarMessage = AppStrings.t("qr_student_not_found", lang),
+                    )
+                }
+            }
+            QrCheckInOutcome.INVALID_TOKEN -> {
+                transientState.update {
+                    it.copy(
+                        lastScanFeedback = ScanFeedback(
+                            studentName = AppStrings.t("qr_result_invalid", lang),
+                            status = "blocked",
+                            detail = result.tokenPreview,
+                        ),
+                        qrVerificationBanner = QrVerificationBanner(QrVerifyStatus.INVALID, result.tokenPreview),
+                        snackbarMessage = AppStrings.t("qr_result_invalid", lang),
+                    )
+                }
+            }
         }
     }
 
@@ -460,12 +683,23 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
         repo.cycleResourceStatus(resource)
     }
 
+    fun updateStudyBudgetMinutes(minutes: Int) {
+        transientState.update { it.copy(studyBudgetMinutes = minutes.coerceIn(10, 60)) }
+    }
+
     fun executeOrSeatRebalance() = viewModelScope.launch {
         val alloc = uiState.value.operatingReport?.groupAllocation ?: return@launch
-        val fromId = alloc.bottleneckGroupId ?: return@launch
-        val toId = alloc.slackGroupId ?: return@launch
-        val shifted = repo.executeOrSeatRebalance(fromId, toId, alloc.recommendedSeatShift)
-        if (shifted > 0) {
+        var totalShifted = 0
+        if (alloc.transferPlans.isNotEmpty()) {
+            alloc.transferPlans.forEach { plan ->
+                totalShifted += repo.executeOrSeatRebalance(plan.fromGroupId, plan.toGroupId, plan.seatsToMove)
+            }
+        } else {
+            val fromId = alloc.bottleneckGroupId ?: return@launch
+            val toId = alloc.slackGroupId ?: return@launch
+            totalShifted = repo.executeOrSeatRebalance(fromId, toId, alloc.recommendedSeatShift)
+        }
+        if (totalShifted > 0) {
             transientState.update {
                 it.copy(snackbarMessage = AppStrings.t("rebalance_done", uiState.value.language))
             }
@@ -505,14 +739,44 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
 
     fun compressAndAttachReceipt(uri: Uri) = viewModelScope.launch {
         val lang = uiState.value.language
-        transientState.update { it.copy(receiptCompressing = true) }
+        transientState.update { it.copy(receiptCompressing = true, receiptScanState = ReceiptScanUiState.Idle) }
         ImageCompressor.compressReceiptUri(getApplication(), uri).fold(
             onSuccess = { compressed -> transientState.update { it.copy(receiptCompressing = false, compressedReceipt = compressed) } },
             onFailure = { transientState.update { it.copy(receiptCompressing = false, snackbarMessage = AppStrings.t("compression_failed", lang)) } },
         )
     }
 
-    fun clearCompressedReceipt() { transientState.update { it.copy(compressedReceipt = null) } }
+    fun clearCompressedReceipt() {
+        transientState.update { it.copy(compressedReceipt = null, receiptScanState = ReceiptScanUiState.Idle) }
+    }
+
+    fun scanAttachedReceipt() {
+        val compressed = uiState.value.compressedReceipt ?: return
+        val lang = uiState.value.language
+        transientState.update { it.copy(receiptScanState = ReceiptScanUiState.Loading) }
+        viewModelScope.launch {
+            val bitmap = ImageCompressor.decodeFileScaled(compressed.filePath).getOrElse { err ->
+                transientState.update {
+                    it.copy(receiptScanState = ReceiptScanUiState.Error(err.localizedMessage ?: AppStrings.t("scan_receipt_error", lang)))
+                }
+                return@launch
+            }
+            try {
+                aiToolkit.scanPaymentReceipt(bitmap, lang).fold(
+                    onSuccess = { result ->
+                        transientState.update { it.copy(receiptScanState = ReceiptScanUiState.Success(result)) }
+                    },
+                    onFailure = { err ->
+                        transientState.update {
+                            it.copy(receiptScanState = ReceiptScanUiState.Error(err.localizedMessage ?: AppStrings.t("scan_receipt_error", lang)))
+                        }
+                    },
+                )
+            } finally {
+                bitmap.recycle()
+            }
+        }
+    }
 
     fun enterOfflineWorkspace(role: UserRole) = viewModelScope.launch {
         val label = when (role) {
@@ -602,11 +866,40 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
 
     fun openLecture(unit: CourseUnit, lang: AppLanguage) {
         val title = if (lang == AppLanguage.AR) unit.titleAr else unit.titleEn
-        transientState.update { it.copy(activeLectureId = unit.id, activeLectureTitle = title) }
+        transientState.update {
+            it.copy(
+                activeLectureId = unit.id,
+                activeLectureTitle = title,
+                revisionDeckState = RevisionDeckUiState.Idle,
+            )
+        }
     }
 
     fun closeLecture() {
-        transientState.update { it.copy(activeLectureId = null, activeLectureTitle = null) }
+        transientState.update {
+            it.copy(
+                activeLectureId = null,
+                activeLectureTitle = null,
+                revisionDeckState = RevisionDeckUiState.Idle,
+            )
+        }
+    }
+
+    fun generateLessonRevisionDeck(lessonTitle: String, lessonSummary: String) {
+        val lang = uiState.value.language
+        transientState.update { it.copy(revisionDeckState = RevisionDeckUiState.Loading) }
+        viewModelScope.launch {
+            aiToolkit.generateLessonRevisionDeck(lessonTitle, lessonSummary, lang).fold(
+                onSuccess = { deck ->
+                    transientState.update { it.copy(revisionDeckState = RevisionDeckUiState.Success(deck)) }
+                },
+                onFailure = { err ->
+                    transientState.update {
+                        it.copy(revisionDeckState = RevisionDeckUiState.Error(err.localizedMessage ?: AppStrings.t("revision_deck_error", lang)))
+                    }
+                },
+            )
+        }
     }
 
     fun markActiveLectureCompleted() = viewModelScope.launch {
@@ -647,25 +940,50 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun askStudyAssistant(prompt: String, subject: String = "الرياضيات والفيزياء") {
-        val clean = prompt.trim()
-        if (clean.isEmpty()) return
+    fun askStudyAssistant(
+        prompt: String,
+        subject: String = "الرياضيات والفيزياء",
+        photoUri: Uri? = null,
+    ) {
         val currentState = uiState.value
-        val report = currentState.operatingReport ?: return
         val lang = currentState.language
+        val clean = prompt.trim().ifBlank {
+            if (photoUri != null) {
+                if (lang == AppLanguage.AR) "اشرح وحل هذه المسألة خطوة بخطوة" else "Solve and explain this problem step by step"
+            } else {
+                return
+            }
+        }
+        val report = currentState.operatingReport ?: return
+        val priorHistory = currentState.assistantMessages
 
         transientState.update {
             it.copy(
-                assistantMessages = it.assistantMessages + AssistantMessage(fromUser = true, text = clean),
+                assistantMessages = it.assistantMessages + AssistantMessage(
+                    fromUser = true,
+                    text = clean,
+                    attachedPhotoUri = photoUri?.toString(),
+                ),
                 assistantBusy = true,
                 assistantError = null,
             )
         }
 
         viewModelScope.launch {
+            val problemBitmap = photoUri?.let { uri ->
+                ImageCompressor.decodeScaledBitmap(getApplication(), uri).getOrNull()
+            }
             try {
                 var addedStreamBubble = false
-                aiAdvisor.streamStudyGuidance(clean, currentState.activeRole, subject, report, lang).collect { accumulated ->
+                aiToolkit.streamMultiTurnStudyOrPhoto(
+                    prompt = clean,
+                    history = priorHistory,
+                    problemBitmap = problemBitmap,
+                    role = currentState.activeRole,
+                    subject = subject,
+                    report = report,
+                    lang = lang,
+                ).collect { accumulated ->
                     transientState.update { tr ->
                         val updatedList = if (!addedStreamBubble) {
                             addedStreamBubble = true
@@ -677,9 +995,9 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
                 val followUpChips = if (lang == AppLanguage.AR) {
-                    listOf("أعطني مسألة تدريب", "لخص القانون الأساسي")
+                    listOf("اشرح الخطوة السابقة ببساطة", "أعطني مسألة تدريب")
                 } else {
-                    listOf("Give me a practice problem", "Summarize the key formula")
+                    listOf("Explain the last step simply", "Give me a practice problem")
                 }
                 transientState.update { tr ->
                     val last = tr.assistantMessages.lastOrNull()
@@ -703,6 +1021,8 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
                 transientState.update {
                     it.copy(assistantBusy = false, assistantError = e.localizedMessage ?: "Assistant unavailable")
                 }
+            } finally {
+                problemBitmap?.recycle()
             }
         }
     }
@@ -787,6 +1107,79 @@ class KashkoolViewModel(application: Application) : AndroidViewModel(application
 
     fun buildEvaluationShareText(evaluation: PerformanceEvaluationEntity, lang: AppLanguage): String =
         KashkoolMessageBuilders.buildEvaluationShareText(evaluation, lang)
+
+    fun refreshParentWeeklyDigest() {
+        val currentState = uiState.value
+        val student = currentState.students.firstOrNull() ?: return
+        val lang = currentState.language
+        val attendanceCount = currentState.attendance.count { it.studentId == student.id }
+        val weakTopics = currentState.rescueItems.map { if (lang == AppLanguage.AR) it.topicAr else it.topicEn }
+        val orProfile = currentState.operatingReport?.studentProfiles?.get(student.id)
+        transientState.update { it.copy(parentDigestState = ParentDigestUiState.Loading) }
+        viewModelScope.launch {
+            aiToolkit.composeParentWeeklyDigest(student, attendanceCount, weakTopics, lang, orProfile).fold(
+                onSuccess = { digest ->
+                    transientState.update { it.copy(parentDigestState = ParentDigestUiState.Success(digest)) }
+                },
+                onFailure = { err ->
+                    transientState.update {
+                        it.copy(parentDigestState = ParentDigestUiState.Error(err.localizedMessage ?: AppStrings.t("parent_digest_error", lang)))
+                    }
+                },
+            )
+        }
+    }
+
+    fun composeSecretaryNotice(student: StudentEntity) {
+        val currentState = uiState.value
+        val lang = currentState.language
+        val studentName = if (lang == AppLanguage.AR) student.nameAr else student.nameEn
+        val groupName = currentState.groups.firstOrNull { it.id == student.groupId }?.let {
+            if (lang == AppLanguage.AR) it.nameAr else it.nameEn
+        } ?: if (lang == AppLanguage.AR) "المجموعة الأساسية" else "Main Group"
+        val orProfile = currentState.operatingReport?.studentProfiles?.get(student.id)
+        transientState.update { it.copy(secretaryNoticeState = SecretaryNoticeUiState.Loading(studentName)) }
+        viewModelScope.launch {
+            aiToolkit.composeSecretaryNotice(student, groupName, lang, orProfile).fold(
+                onSuccess = { draft ->
+                    transientState.update { it.copy(secretaryNoticeState = SecretaryNoticeUiState.Success(studentName, draft)) }
+                },
+                onFailure = { err ->
+                    transientState.update {
+                        it.copy(
+                            secretaryNoticeState = SecretaryNoticeUiState.Error(
+                                studentName = studentName,
+                                message = err.localizedMessage ?: AppStrings.t("draft_notice_error", lang),
+                            )
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    fun dismissSecretaryNotice() {
+        transientState.update { it.copy(secretaryNoticeState = SecretaryNoticeUiState.Idle) }
+    }
+
+    fun generateTeacherLessonPlan(group: GroupEntity) {
+        val currentState = uiState.value
+        val lang = currentState.language
+        val avgMastery = currentState.students.takeIf { it.isNotEmpty() }?.map { it.masteryPercent }?.average()?.toInt() ?: 85
+        transientState.update { it.copy(teacherPlanState = TeacherPlanUiState.Loading) }
+        viewModelScope.launch {
+            aiToolkit.generateTeacherLessonPlan(group, avgMastery, lang, currentState.operatingReport).fold(
+                onSuccess = { plan ->
+                    transientState.update { it.copy(teacherPlanState = TeacherPlanUiState.Success(plan)) }
+                },
+                onFailure = { err ->
+                    transientState.update {
+                        it.copy(teacherPlanState = TeacherPlanUiState.Error(err.localizedMessage ?: AppStrings.t("teacher_plan_error", lang)))
+                    }
+                },
+            )
+        }
+    }
 
     fun clearSnackbar() { transientState.update { it.copy(snackbarMessage = null) } }
 
