@@ -115,6 +115,16 @@ export const ExamFortressView: React.FC<{
   const [resultView, setResultView] = useState<ExamResultDto | null>(null);
   const recordedResultAttemptIds = useRef<Set<string>>(new Set());
 
+  // Exam-Mode Focus Override: freeze decorative floating motion while taking an exam
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("kashkool-exam-focus", { detail: { active: Boolean(activeAttempt) } })
+    );
+    return () => {
+      window.dispatchEvent(new CustomEvent("kashkool-exam-focus", { detail: { active: false } }));
+    };
+  }, [activeAttempt]);
+
   // Staff: Publish New Exam form
   const [createOpen, setCreateOpen] = useState(false);
   const [formTitleAr, setFormTitleAr] = useState("");

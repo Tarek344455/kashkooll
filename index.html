@@ -1,8 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" class="dark">
+<html lang="ar" dir="rtl" class="dark" style="background-color:#070B19;">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#070B19" />
     <title>Kashkool — كشكول</title>
     <meta
       name="description"
@@ -19,9 +20,34 @@
       href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
+    <style>
+      @keyframes kashkoolBootOrbit {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes kashkoolBootPulse {
+        0%, 100% { opacity: 0.55; transform: scale(0.96); }
+        50% { opacity: 0.95; transform: scale(1.04); }
+      }
+    </style>
   </head>
-  <body class="bg-[#0E1525] text-[#F1F5F9] antialiased selection:bg-[#38BDF8]/30 selection:text-[#F1F5F9]">
-    <div id="root"></div>
+  <body class="bg-[#070B19] text-[#F1F5F9] antialiased selection:bg-[#38BDF8]/30 selection:text-[#F1F5F9]" style="background-color:#070B19;margin:0;">
+    <div id="root">
+      <!-- Zero-Blank-Screen Pre-Hydration Orbital Boot Shell -->
+      <div
+        id="kashkool-boot-splash"
+        style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 42%,rgba(56,189,248,0.16),#070B19 65%);color:#F1F5F9;font-family:Cairo,system-ui,sans-serif;"
+      >
+        <div style="position:relative;width:112px;height:112px;display:flex;align-items:center;justify-content:center;">
+          <div style="position:absolute;inset:0;border-radius:9999px;border:1.5px solid rgba(56,189,248,0.28);border-top-color:#38BDF8;animation:kashkoolBootOrbit 2.4s linear infinite;"></div>
+          <div style="position:absolute;inset:12px;border-radius:9999px;border:1px dashed rgba(167,139,250,0.35);border-bottom-color:#A78BFA;animation:kashkoolBootOrbit 3.6s linear infinite reverse;"></div>
+          <div style="width:62px;height:62px;border-radius:18px;background:linear-gradient(135deg,#38BDF8,#0284C7);display:flex;align-items:center;justify-content:center;color:#070B19;font-weight:800;font-size:28px;box-shadow:0 0 36px rgba(56,189,248,0.45);animation:kashkoolBootPulse 1.8s ease-in-out infinite;">
+            ك
+          </div>
+        </div>
+        <div style="margin-top:18px;font-size:16px;font-weight:800;letter-spacing:0.02em;color:#F1F5F9;">كشكول</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

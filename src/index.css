@@ -2,8 +2,8 @@
 
 @layer base {
   :root {
-    --cosmic-black: #0A0F1C;
-    --deep-void: #0E1525;
+    --cosmic-black: #070B19;
+    --deep-void: #0A0F1C;
     --nebula-indigo: #182238;
     --space-surface: #141D2F;
     --space-surface-variant: #1B263B;
@@ -22,7 +22,7 @@
 
   html,
   body {
-    background-color: var(--deep-void);
+    background-color: var(--cosmic-black);
     color: var(--text-primary);
     font-family: "Cairo", "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
     min-height: 100%;
@@ -48,6 +48,48 @@
   }
 }
 
+@keyframes kashkoolZeroGFloat {
+  0%,
+  100% {
+    transform: translate3d(0, 0px, 0);
+  }
+  50% {
+    transform: translate3d(0, -4px, 0);
+  }
+}
+
+@keyframes kashkoolWarpEnter {
+  0% {
+    opacity: 0;
+    transform: perspective(1000px) translate3d(0, 12px, -18px) scale(0.975);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(1000px) translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes kashkoolOrbitSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes kashkoolNebulaPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.97);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
 .kashkool-shimmer {
   background: linear-gradient(
     90deg,
@@ -59,13 +101,49 @@
   animation: kashkoolShimmer 1.6s infinite linear;
 }
 
+.kashkool-zero-g {
+  will-change: transform;
+  animation: kashkoolZeroGFloat var(--float-duration, 6.4s) ease-in-out infinite;
+  animation-delay: var(--float-delay, 0s);
+}
+
+.kashkool-warp-enter {
+  animation: kashkoolWarpEnter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.kashkool-space-glass {
+  background: linear-gradient(
+    145deg,
+    rgba(20, 29, 47, 0.92) 0%,
+    rgba(14, 21, 37, 0.96) 100%
+  );
+  box-shadow:
+    0 14px 36px -14px rgba(0, 0, 0, 0.72),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Exam-Mode Focus Override & Accessibility Motion Guard */
+[data-exam-freeze="true"] .kashkool-zero-g,
+[data-exam-freeze="true"] .kashkool-warp-enter {
+  animation: none !important;
+  transform: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kashkool-zero-g,
+  .kashkool-warp-enter,
+  .kashkool-shimmer {
+    animation: none !important;
+  }
+}
+
 /* Custom sleek dark scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0A0F1C;
+  background: #070B19;
 }
 ::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.25);

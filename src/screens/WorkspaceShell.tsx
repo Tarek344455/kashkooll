@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useKashkool } from "../context/KashkoolContext";
+import { destinationsForRole } from "../core/security/roleAccessGuard";
 import { AppDestination, AppLanguage, UserRole } from "../types/kashkool";
 import { CosmicButton, StatusBadge } from "../components/CosmicUi";
 
@@ -23,19 +24,6 @@ interface NavItem {
   dest: AppDestination;
   labelKey: string;
   icon: React.ReactNode;
-}
-
-export function destinationsForRole(role: UserRole): AppDestination[] {
-  switch (role) {
-    case UserRole.STUDENT:
-      return ["home", "courses", "assistant", "wallet"];
-    case UserRole.SECRETARY:
-      return ["home", "desk", "analytics", "teacher", "wallet"];
-    case UserRole.TEACHER:
-      return ["home", "teacher", "courses", "assistant", "desk"];
-    case UserRole.PARENT:
-      return ["home", "parent", "wallet", "courses"];
-  }
 }
 
 export const WorkspaceShell: React.FC<{
@@ -188,17 +176,20 @@ export const WorkspaceShell: React.FC<{
       {/* Main Content Area with Desktop Rail + Mobile Bottom Bar */}
       <div className="flex-1 max-w-7xl w-full mx-auto flex">
         {/* Desktop Navigation Rail */}
-        <aside className="hidden md:flex flex-col w-56 shrink-0 border-e border-white/10 p-3 gap-1.5 bg-[#0E1525]/55">
+        <aside className="hidden md:flex flex-col w-56 shrink-0 border-e border-white/10 p-3 gap-1.5 bg-[#0A0F1C]/65">
           {roleTabs.map((item) => {
             const active = destination === item.dest;
             return (
               <button
                 key={item.dest}
                 type="button"
-                onClick={() => onNavigate(item.dest)}
+                onClick={() => {
+                  try { navigator.vibrate?.(6); } catch { /* ignore */ }
+                  onNavigate(item.dest);
+                }}
                 className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all cursor-pointer ${
                   active
-                    ? "bg-[#38BDF8]/18 border border-[#38BDF8]/45 text-[#38BDF8]"
+                    ? "bg-[#38BDF8]/18 border border-[#38BDF8]/50 text-[#38BDF8] shadow-[0_0_20px_-6px_rgba(56,189,248,0.45)]"
                     : "border border-transparent text-[#94A3B8] hover:text-[#F1F5F9] hover:bg-white/5"
                 }`}
               >
@@ -207,29 +198,14 @@ export const WorkspaceShell: React.FC<{
               </button>
             );
           })}
-
-          {activeRole === UserRole.TEACHER && (
-            <button
-              type="button"
-              onClick={() => onNavigate("analytics")}
-              className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all cursor-pointer ${
-                destination === "analytics"
-                  ? "bg-[#38BDF8]/18 border border-[#38BDF8]/45 text-[#38BDF8]"
-                  : "border border-transparent text-[#94A3B8] hover:text-[#F1F5F9] hover:bg-white/5"
-              }`}
-            >
-              <BarChart3 className="w-4 h-4" />
-              <span>{tr("nav_analytics")}</span>
-            </button>
-          )}
         </aside>
 
         {/* Screen Body */}
         <main className="flex-1 min-w-0 p-3 sm:p-6 pb-24 md:pb-8">{children}</main>
       </div>
 
-      {/* Mobile Bottom Navigation Bar */}
-      <nav className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-[#0E1525]/96 backdrop-blur-md border-t border-white/10 px-2 py-1.5">
+      {/* Levitating Space-Glass Mobile Bottom Navigation Dock */}
+      <nav className="md:hidden fixed inset-x-3 bottom-2.5 z-30 rounded-2xl kashkool-space-glass border border-[#38BDF8]/25 px-2 py-1.5 shadow-[0_16px_40px_-10px_rgba(0,0,0,0.85)]">
         <div className="flex items-center justify-around gap-1">
           {roleTabs.map((item) => {
             const active = destination === item.dest;
@@ -237,11 +213,19 @@ export const WorkspaceShell: React.FC<{
               <button
                 key={item.dest}
                 type="button"
-                onClick={() => onNavigate(item.dest)}
-                className={`flex-1 flex flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 px-1 text-[11px] font-semibold transition-colors cursor-pointer ${
-                  active ? "text-[#38BDF8] bg-[#38BDF8]/12" : "text-[#94A3B8]"
+                onClick={() => {
+                  try { navigator.vibrate?.(6); } catch { /* ignore */ }
+                  onNavigate(item.dest);
+                }}
+                className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 px-1 text-[11px] font-semibold transition-all cursor-pointer ${
+                  active
+                    ? "text-[#38BDF8] bg-[#38BDF8]/16 shadow-[inset_0_1px_0_rgba(56,189,248,0.35)]"
+                    : "text-[#94A3B8] hover:text-[#F1F5F9]"
                 }`}
               >
+                {active && (
+                  <span className="absolute -top-1 w-5 h-0.5 rounded-full bg-[#38BDF8] shadow-[0_0_8px_#38BDF8]" />
+                )}
                 {item.icon}
                 <span className="truncate max-w-full">{tr(item.labelKey)}</span>
               </button>

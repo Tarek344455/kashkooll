@@ -12,6 +12,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useKashkool } from "../context/KashkoolContext";
+import { canManageFinancialLedger } from "../core/security/roleAccessGuard";
 import { EgyptValidators } from "../core/utils/egyptValidators";
 import { copyToClipboard } from "../core/utils/browserUtils";
 import { ledgerKindLabel } from "../core/l10n/appStrings";
@@ -42,6 +43,13 @@ export const WalletAndPaymentsScreen: React.FC = () => {
   } = useKashkool();
   const displayStudent =
     activeRole === UserRole.PARENT ? linkedParentStudent ?? activeStudent : activeStudent;
+  const canManageLedger = canManageFinancialLedger(activeRole);
+  const visibleSubmissions = canManageLedger
+    ? submissions
+    : submissions.filter((sub) => !displayStudent || sub.studentId === displayStudent.id);
+  const visibleLedger = canManageLedger
+    ? ledger
+    : ledger.filter((entry) => displayStudent && entry.studentId === displayStudent.id);
 
   const isAr = language === AppLanguage.AR;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -304,11 +312,11 @@ export const WalletAndPaymentsScreen: React.FC = () => {
           <Receipt className="w-4 h-4 text-[#38BDF8]" />
           <h3 className="text-sm font-bold text-[#F1F5F9]">{tr("submissions_history")}</h3>
         </div>
-        {submissions.length === 0 ? (
+        {visibleSubmissions.length === 0 ? (
           <p className="text-xs text-[#94A3B8]">{tr("no_pending_receipts")}</p>
         ) : (
           <div className="space-y-2">
-            {submissions.map((sub) => {
+            {visibleSubmissions.map((sub) => {
               const tone =
                 sub.status === SubmissionStatus.APPROVED
                   ? "emerald"
@@ -354,69 +362,77 @@ export const WalletAndPaymentsScreen: React.FC = () => {
             <ShieldCheck className="w-4 h-4 text-[#34D399]" />
             <h3 className="text-sm font-bold text-[#F1F5F9]">{tr("immutable_ledger")}</h3>
           </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge tone="emerald" label={tr("os_or_verified_badge")} />
-            <CosmicButton
-              type="button"
-              tone="cyan"
-              variant="outline"
-              className="text-xs py-1 px-2.5"
-              icon={<Download className="w-3.5 h-3.5" />}
-              onClick={exportFinancialCsv}
-            >
-              {tr("export_csv_cta")}
-            </CosmicButton>
-          </div>
+          {canManageLedger && (
+            <div className="flex items-center gap-2">
+              <StatusBadge tone="emerald" label={tr("os_or_verified_badge")} />
+              <CosmicButton
+                type="button"
+                tone="cyan"
+                variant="outline"
+                className="text-xs py-1 px-2.5"
+                icon={<Download className="w-3.5 h-3.5" />}
+                onClick={exportFinancialCsv}
+              >
+                {tr("export_csv_cta")}
+              </CosmicButton>
+            </div>
+          )}
         </div>
 
         <div className="space-y-2">
-          {ledger.map((entry) => {
-            const isVoided =
-              entry.kind === LedgerKind.VOID_ENTRY ||
-              ledger.some((other) => other.voidedEntryId === entry.id);
-            return (
-              <div
-                key={entry.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#0A0F1C]/65 border border-white/10 p-3 text-xs"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-[#F1F5F9]">
-                      {isAr ? entry.studentNameAr : entry.studentNameEn}
-                    </span>
-                    <StatusBadge
-                      tone={entry.kind === LedgerKind.VOID_ENTRY ? "crimson" : "cyan"}
-                      label={ledgerKindLabel(entry.kind, language)}
-                    />
+          {visibleLedger.length === 0 ? (
+            <p className="text-xs text-[#94A3B8]">
+              {isAr ? "لسه مفيش معاملات مالية مسجلة هنا." : "No financial transactions recorded yet."}
+            </p>
+          ) : (
+            visibleLedger.map((entry) => {
+              const isVoided =
+                entry.kind === LedgerKind.VOID_ENTRY ||
+                ledger.some((other) => other.voidedEntryId === entry.id);
+              return (
+                <div
+                  key={entry.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#0A0F1C]/65 border border-white/10 p-3 text-xs"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-[#F1F5F9]">
+                        {isAr ? entry.studentNameAr : entry.studentNameEn}
+                      </span>
+                      <StatusBadge
+                        tone={entry.kind === LedgerKind.VOID_ENTRY ? "crimson" : "cyan"}
+                        label={ledgerKindLabel(entry.kind, language)}
+                      />
+                    </div>
+                    {entry.note && <p className="text-[#94A3B8] mt-0.5">{entry.note}</p>}
                   </div>
-                  {entry.note && <p className="text-[#94A3B8] mt-0.5">{entry.note}</p>}
-                </div>
 
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`font-extrabold tabular-nums ${
-                      entry.amountPiasters < 0 ? "text-[#F87171]" : "text-[#34D399]"
-                    }`}
-                  >
-                    {EgyptValidators.formatPiasters(entry.amountPiasters, language)}
-                  </span>
-                  {!isVoided && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setVoidTargetId(entry.id);
-                        setVoidReason("");
-                      }}
-                      className="inline-flex items-center gap-1 rounded-lg border border-[#F87171]/35 px-2 py-1 text-[11px] font-semibold text-[#F87171] hover:bg-[#F87171]/10 cursor-pointer"
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`font-extrabold tabular-nums ${
+                        entry.amountPiasters < 0 ? "text-[#F87171]" : "text-[#34D399]"
+                      }`}
                     >
-                      <Ban className="w-3 h-3" />
-                      {tr("void_entry")}
-                    </button>
-                  )}
+                      {EgyptValidators.formatPiasters(entry.amountPiasters, language)}
+                    </span>
+                    {canManageLedger && !isVoided && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVoidTargetId(entry.id);
+                          setVoidReason("");
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-[#F87171]/35 px-2 py-1 text-[11px] font-semibold text-[#F87171] hover:bg-[#F87171]/10 cursor-pointer"
+                      >
+                        <Ban className="w-3 h-3" />
+                        {tr("void_entry")}
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </CosmicCard>
 

@@ -87,7 +87,7 @@ export const DashboardHomeScreen: React.FC<{
           { titleKey: "open_parent", dest: "parent", icon: <Shield className="w-5 h-5" />, tone: "purple" },
           { titleKey: "open_checkout", dest: "wallet", icon: <Wallet className="w-5 h-5" />, tone: "emerald" },
           { titleKey: "open_courses", dest: "courses", icon: <BookOpen className="w-5 h-5" />, tone: "cyan" },
-          { titleKey: "open_assistant", dest: "assistant", icon: <HelpCircle className="w-5 h-5" />, tone: "gold" },
+          { titleKey: "open_quiz", dest: "courses", icon: <Activity className="w-5 h-5" />, tone: "gold", openQuizTab: true },
         ];
     }
   })();
@@ -95,7 +95,7 @@ export const DashboardHomeScreen: React.FC<{
   return (
     <div className="space-y-5">
       {/* Role Hero Card */}
-      <CosmicCard tone="cyan" className="bg-gradient-to-br from-[#141D2F] via-[#141D2F] to-[#1B2A44]">
+      <CosmicCard tone="cyan" floatIndex={0} className="bg-gradient-to-br from-[#141D2F] via-[#141D2F] to-[#1B2A44]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
             <p className="text-xs font-semibold text-[#38BDF8]">{tr("zero_cost_badge")}</p>
@@ -109,17 +109,24 @@ export const DashboardHomeScreen: React.FC<{
             <p className="text-xs text-[#94A3B8]">{tr("subtitle_cosmic")}</p>
           </div>
 
-          <StatusBadge
-            tone="emerald"
-            label={`${tr("os_certainty_index")}: ${operatingReport.certaintyScorePercent}%`}
-          />
+          {isStaff ? (
+            <StatusBadge
+              tone="emerald"
+              label={`${tr("os_certainty_index")}: ${operatingReport.certaintyScorePercent}%`}
+            />
+          ) : student ? (
+            <StatusBadge
+              tone="cyan"
+              label={`${tr("student_mastery")}: ${student.masteryPercent}%`}
+            />
+          ) : null}
         </div>
       </CosmicCard>
 
       {/* Role-Specific Primary KPIs */}
       {!isStaff && student ? (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <CosmicCard tone="emerald" className="space-y-1">
+          <CosmicCard tone="emerald" floatIndex={1} className="space-y-1">
             <p className="text-xs text-[#94A3B8]">{tr("wallet_balance")}</p>
             <p className="text-xl font-extrabold text-[#34D399] tabular-nums">{walletEgp}</p>
             {student.dueBalancePiasters > 0 && (
@@ -129,7 +136,7 @@ export const DashboardHomeScreen: React.FC<{
             )}
           </CosmicCard>
 
-          <CosmicCard tone="gold" className="space-y-1">
+          <CosmicCard tone="gold" floatIndex={2} className="space-y-1">
             <p className="text-xs text-[#94A3B8]">{tr("streak_days")}</p>
             <div className="flex items-center gap-2">
               <Flame className="w-5 h-5 text-[#EAB308]" />
@@ -139,7 +146,7 @@ export const DashboardHomeScreen: React.FC<{
             </div>
           </CosmicCard>
 
-          <CosmicCard tone="cyan" className="space-y-2">
+          <CosmicCard tone="cyan" floatIndex={3} className="space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-[#94A3B8]">{tr("student_mastery")}</span>
               <span className="font-bold text-[#38BDF8] tabular-nums">{student.masteryPercent}%</span>

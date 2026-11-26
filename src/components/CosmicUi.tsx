@@ -1,57 +1,65 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { Loader2, X } from "lucide-react";
 
 export type AccentTone = "cyan" | "emerald" | "amber" | "crimson" | "gold" | "purple" | "blue" | "slate";
 
-const TONE_MAP: Record<AccentTone, { border: string; text: string; bg: string; hex: string }> = {
+const TONE_MAP: Record<AccentTone, { border: string; text: string; bg: string; hex: string; glow: string }> = {
   cyan: {
-    border: "border-[#38BDF8]/25",
+    border: "border-[#38BDF8]/28",
     text: "text-[#38BDF8]",
     bg: "bg-[#38BDF8]/12",
     hex: "#38BDF8",
+    glow: "hover:border-[#38BDF8]/55 hover:shadow-[0_14px_38px_-14px_rgba(56,189,248,0.28)]",
   },
   emerald: {
-    border: "border-[#34D399]/25",
+    border: "border-[#34D399]/28",
     text: "text-[#34D399]",
     bg: "bg-[#34D399]/12",
     hex: "#34D399",
+    glow: "hover:border-[#34D399]/55 hover:shadow-[0_14px_38px_-14px_rgba(52,211,153,0.26)]",
   },
   amber: {
     border: "border-[#FBBF24]/30",
     text: "text-[#FBBF24]",
     bg: "bg-[#FBBF24]/12",
     hex: "#FBBF24",
+    glow: "hover:border-[#FBBF24]/55 hover:shadow-[0_14px_38px_-14px_rgba(251,191,36,0.26)]",
   },
   crimson: {
     border: "border-[#F87171]/30",
     text: "text-[#F87171]",
     bg: "bg-[#F87171]/12",
     hex: "#F87171",
+    glow: "hover:border-[#F87171]/55 hover:shadow-[0_14px_38px_-14px_rgba(248,113,113,0.26)]",
   },
   gold: {
     border: "border-[#EAB308]/30",
     text: "text-[#EAB308]",
     bg: "bg-[#EAB308]/12",
     hex: "#EAB308",
+    glow: "hover:border-[#EAB308]/55 hover:shadow-[0_14px_38px_-14px_rgba(234,179,8,0.26)]",
   },
   purple: {
     border: "border-[#A78BFA]/28",
     text: "text-[#A78BFA]",
     bg: "bg-[#A78BFA]/12",
     hex: "#A78BFA",
+    glow: "hover:border-[#A78BFA]/55 hover:shadow-[0_14px_38px_-14px_rgba(167,139,250,0.28)]",
   },
   blue: {
-    border: "border-[#60A5FA]/25",
+    border: "border-[#60A5FA]/28",
     text: "text-[#60A5FA]",
     bg: "bg-[#60A5FA]/12",
     hex: "#60A5FA",
+    glow: "hover:border-[#60A5FA]/55 hover:shadow-[0_14px_38px_-14px_rgba(96,165,250,0.26)]",
   },
   slate: {
-    border: "border-white/10",
+    border: "border-white/12",
     text: "text-[#94A3B8]",
     bg: "bg-white/5",
     hex: "#94A3B8",
+    glow: "hover:border-white/25",
   },
 };
 
@@ -60,19 +68,62 @@ export const CosmicCard: React.FC<{
   tone?: AccentTone;
   className?: string;
   onClick?: () => void;
-}> = ({ children, tone = "cyan", className = "", onClick }) => {
+  floatIndex?: number;
+  tiltEnabled?: boolean;
+}> = ({ children, tone = "cyan", className = "", onClick, floatIndex, tiltEnabled = Boolean(onClick) }) => {
   const t = TONE_MAP[tone];
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [tiltStyle, setTiltStyle] = useState<React.CSSProperties>({});
+
+  const floatStyle: React.CSSProperties | undefined =
+    typeof floatIndex === "number"
+      ? ({
+          "--float-delay": `${((floatIndex % 5) * -1.15).toFixed(2)}s`,
+          "--float-duration": `${(5.8 + (floatIndex % 3) * 0.8).toFixed(2)}s`,
+        } as React.CSSProperties)
+      : undefined;
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!tiltEnabled || !cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const nx = (e.clientX - rect.left) / rect.width - 0.5;
+    const ny = (e.clientY - rect.top) / rect.height - 0.5;
+    setTiltStyle({
+      transform: `perspective(900px) rotateX(${(-ny * 4.5).toFixed(2)}deg) rotateY(${(nx * 4.5).toFixed(2)}deg) translate3d(0, -2px, 0)`,
+    });
+  };
+
+  const resetTilt = () => {
+    if (tiltEnabled) setTiltStyle({});
+  };
+
   return (
     <div
-      onClick={onClick}
-      className={`rounded-2xl bg-[#141D2F]/95 border ${t.border} p-4 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] ${
-        onClick ? "cursor-pointer hover:border-[#38BDF8]/45 transition-colors" : ""
-      } ${className}`}
+      ref={cardRef}
+      onClick={() => {
+        if (onClick) {
+          try {
+            navigator.vibrate?.(6);
+          } catch {
+            // Haptics unsupported on desktop
+          }
+          onClick();
+        }
+      }}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={resetTilt}
+      style={{ ...floatStyle, ...tiltStyle }}
+      className={`rounded-2xl kashkool-space-glass border ${t.border} p-4 transition-[transform,border-color,box-shadow] duration-200 ease-out ${
+        typeof floatIndex === "number" ? "kashkool-zero-g" : ""
+      } ${onClick ? `cursor-pointer ${t.glow}` : ""} ${className}`}
     >
       {children}
     </div>
   );
 };
+
+export const ZeroGravityCard = CosmicCard;
 
 export const CosmicButton: React.FC<
   React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -89,8 +140,34 @@ export const CosmicButton: React.FC<
   icon,
   className = "",
   disabled,
+  onClick,
   ...rest
 }) => {
+  const [internalBusy, setInternalBusy] = useState(false);
+  const busy = loading || internalBusy;
+
+  const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (busy || disabled) return;
+    try {
+      navigator.vibrate?.(8);
+    } catch {
+      // Haptics unsupported
+    }
+    if (!onClick) return;
+    const maybePromise = onClick(e) as unknown;
+    if (
+      maybePromise &&
+      typeof (maybePromise as PromiseLike<unknown>).then === "function"
+    ) {
+      setInternalBusy(true);
+      try {
+        await maybePromise;
+      } finally {
+        setInternalBusy(false);
+      }
+    }
+  };
+
   const toneStyles: Record<AccentTone, { solid: string; outline: string; subtle: string }> = {
     cyan: {
       solid: "bg-[#38BDF8] text-[#0A0F1C] hover:bg-[#5ccbfa] border-transparent",
@@ -136,11 +213,12 @@ export const CosmicButton: React.FC<
 
   return (
     <button
-      disabled={disabled || loading}
+      disabled={disabled || busy}
+      onClick={(e) => void handleClick(e)}
       className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3.5 py-2.5 text-sm font-semibold whitespace-nowrap shrink-0 transition-all active:scale-[0.98] disabled:opacity-45 disabled:pointer-events-none cursor-pointer ${toneStyles[tone][variant]} ${className}`}
       {...rest}
     >
-      {loading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : icon}
+      {busy ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : icon}
       <span>{children}</span>
     </button>
   );

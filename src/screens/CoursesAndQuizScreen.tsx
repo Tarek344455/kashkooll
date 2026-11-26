@@ -50,7 +50,10 @@ export const CoursesAndQuizScreen: React.FC<{
   } = useKashkool();
 
   const isAr = language === AppLanguage.AR;
-  const [tab, setTab] = useState<"courses" | "quiz" | "exams" | "homework" | "mistakes">(initialTab);
+  const isParent = activeRole === UserRole.PARENT;
+  const [tab, setTab] = useState<"courses" | "quiz" | "exams" | "homework" | "mistakes">(
+    isParent && initialTab === "quiz" ? "courses" : initialTab
+  );
   const [lectureProgress, setLectureProgress] = useState(35);
   const unmasteredMistakes = mistakeBank.filter(
     (m) => m.studentId === (activeStudent?.id ?? "stu-1") && !m.mastered
@@ -65,8 +68,8 @@ export const CoursesAndQuizScreen: React.FC<{
   const [quizFinished, setQuizFinished] = useState(false);
 
   useEffect(() => {
-    setTab(initialTab);
-  }, [initialTab]);
+    setTab(isParent && initialTab === "quiz" ? "courses" : initialTab);
+  }, [initialTab, isParent]);
 
   useEffect(() => {
     setQIndex(0);
@@ -127,17 +130,19 @@ export const CoursesAndQuizScreen: React.FC<{
           >
             {tr("courses_tab")}
           </button>
-          <button
-            type="button"
-            onClick={() => setTab("quiz")}
-            className={`rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-bold cursor-pointer ${
-              tab === "quiz"
-                ? "bg-[#EAB308]/18 border-[#EAB308]/60 text-[#EAB308]"
-                : "bg-[#141D2F] border-white/10 text-[#94A3B8]"
-            }`}
-          >
-            {tr("quiz_tab")}
-          </button>
+          {!isParent && (
+            <button
+              type="button"
+              onClick={() => setTab("quiz")}
+              className={`rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-bold cursor-pointer ${
+                tab === "quiz"
+                  ? "bg-[#EAB308]/18 border-[#EAB308]/60 text-[#EAB308]"
+                  : "bg-[#141D2F] border-white/10 text-[#94A3B8]"
+              }`}
+            >
+              {tr("quiz_tab")}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setTab("exams")}
