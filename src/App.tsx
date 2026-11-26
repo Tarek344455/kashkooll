@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { KashkoolProvider, useKashkool } from "./context/KashkoolContext";
 import { AppDestination, AppLanguage } from "./types/kashkool";
 import { isDestinationAllowed, resolveSafeDestination } from "./core/security/roleAccessGuard";
@@ -22,6 +22,7 @@ const KashkoolRouter: React.FC = () => {
   const [assistantInitialSubject, setAssistantInitialSubject] = useState<string | null>(null);
   const [bootComplete, setBootComplete] = useState(false);
   const [examModeActive, setExamModeActive] = useState(false);
+  const handleBootComplete = useCallback(() => setBootComplete(true), []);
 
   // Listen for Exam-Mode Focus Override events from ExamFortressView
   useEffect(() => {
@@ -65,7 +66,7 @@ const KashkoolRouter: React.FC = () => {
     <div data-exam-freeze={examModeActive ? "true" : "false"} className="relative min-h-screen bg-[#070B19]">
       <CosmicParallaxCanvas examModeActive={examModeActive} />
       {!bootComplete && (
-        <OrbitalIgnitionSplash language={language} onComplete={() => setBootComplete(true)} />
+        <OrbitalIgnitionSplash language={language} onComplete={handleBootComplete} />
       )}
 
       <div className="relative z-10">

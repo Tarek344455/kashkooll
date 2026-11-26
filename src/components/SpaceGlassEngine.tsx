@@ -169,6 +169,8 @@ export const OrbitalIgnitionSplash: React.FC<{
   onComplete: () => void;
 }> = ({ language, onComplete }) => {
   const [fadingOut, setFadingOut] = useState(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     const prefersReduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -176,12 +178,12 @@ export const OrbitalIgnitionSplash: React.FC<{
     const fadeMs = prefersReduced ? 80 : 280;
 
     const t1 = window.setTimeout(() => setFadingOut(true), holdMs);
-    const t2 = window.setTimeout(() => onComplete(), holdMs + fadeMs);
+    const t2 = window.setTimeout(() => onCompleteRef.current(), holdMs + fadeMs);
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-  }, [onComplete]);
+  }, []);
 
   const isAr = language === AppLanguage.AR;
 
