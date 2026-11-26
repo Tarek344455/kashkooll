@@ -12,6 +12,7 @@ import {
   ScanLine,
   Shield,
   Wallet,
+  WifiOff,
   X,
 } from "lucide-react";
 import { useKashkool } from "../context/KashkoolContext";
@@ -47,6 +48,7 @@ export const WorkspaceShell: React.FC<{
     activeRole,
     userLabel,
     pendingSyncCount,
+    isOnline,
     syncBusy,
     snackbarMessage,
     clearSnackbar,
@@ -167,6 +169,21 @@ export const WorkspaceShell: React.FC<{
           </div>
         </div>
       </header>
+
+      {/* Offline Resilience Banner */}
+      {!isOnline && (
+        <div className="bg-[#FBBF24]/15 border-b border-[#FBBF24]/35 px-4 py-2 text-xs font-semibold text-[#FBBF24]">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <WifiOff className="w-4 h-4 shrink-0" />
+              {tr("offline_banner_offline")}
+            </span>
+            {pendingSyncCount > 0 && (
+              <span className="font-mono-tabular font-bold">{pendingSyncCount}</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area with Desktop Rail + Mobile Bottom Bar */}
       <div className="flex-1 max-w-7xl w-full mx-auto flex">

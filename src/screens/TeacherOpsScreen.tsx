@@ -6,6 +6,7 @@ import {
   Briefcase,
   CheckCircle2,
   Crown,
+  Download,
   Layers,
   Plus,
   Receipt,
@@ -23,11 +24,15 @@ import {
   PaymentSubmissionEntity,
   ResourceType,
   SubmissionStatus,
+  UserRole,
 } from "../types/kashkool";
 import { CosmicButton, CosmicCard, EmptyState, ModalDialog, StatusBadge } from "../components/CosmicUi";
 import { AttendanceTrendAreaChart } from "../components/AttendanceCharts";
 import { PerformanceEvaluationCard } from "../components/PerformanceEvaluationCard";
 import { TeacherLessonPlanCard } from "../components/AiToolkitCards";
+import { ExamFortressView } from "../components/ExamFortressView";
+import { CommunicationHubPanel, HomeworkPanel } from "../components/AcademicHubPanels";
+import { AegisSecurityPanel } from "../components/AegisSecurityPanel";
 
 export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => void }> = ({
   onNavigate,
@@ -55,11 +60,12 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
     addPaymentChannel,
     toggleChannelActive,
     submitCenterPlanUpgrade,
+    exportFinancialCsv,
     tr,
   } = useKashkool();
 
   const isAr = language === AppLanguage.AR;
-  const [subTab, setSubTab] = useState<"overview" | "finances" | "receipts">("overview");
+  const [subTab, setSubTab] = useState<"overview" | "finances" | "receipts" | "security_ops">("overview");
   const [chartDayIdx, setChartDayIdx] = useState<number | null>(null);
 
   // Modals
@@ -69,20 +75,24 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
   const [gSchedule, setGSchedule] = useState("");
   const [gCapacity, setGCapacity] = useState("40");
   const [gPrice, setGPrice] = useState("85");
+  const [groupFormError, setGroupFormError] = useState<string | null>(null);
 
   const [addResOpen, setAddResOpen] = useState(false);
   const [rName, setRName] = useState("");
   const [rType, setRType] = useState<ResourceType>(ResourceType.TOOL);
   const [rCost, setRCost] = useState("150");
+  const [resFormError, setResFormError] = useState<string | null>(null);
 
   const [rejectTarget, setRejectTarget] = useState<PaymentSubmissionEntity | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [rejectError, setRejectError] = useState<string | null>(null);
 
   const [addChannelOpen, setAddChannelOpen] = useState(false);
   const [chName, setChName] = useState("");
   const [chType, setChType] = useState("vodafone_cash");
   const [chRef, setChRef] = useState("");
   const [chFee, setChFee] = useState("0");
+  const [channelFormError, setChannelFormError] = useState<string | null>(null);
 
   const [planOpen, setPlanOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<CenterPlanTier | null>(null);
@@ -110,12 +120,13 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
   return (
     <div className="space-y-4">
       {/* Sub-Tabs */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {(
           [
-            { id: "overview", key: "teacher_tab_overview" },
-            { id: "finances", key: "teacher_tab_finances" },
-            { id: "receipts", key: "teacher_tab_receipts" },
+            { id: "overview", label: tr("teacher_tab_overview") },
+            { id: "finances", label: tr("teacher_tab_finances") },
+            { id: "receipts", label: tr("teacher_tab_receipts") },
+            { id: "security_ops", label: isAr ? "الامتحانات والأمان" : "Exams & Aegis" },
           ] as const
         ).map((tab) => (
           <button
@@ -128,7 +139,7 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
                 : "bg-[#141D2F] border-white/10 text-[#94A3B8] hover:text-[#F1F5F9]"
             }`}
           >
-            {tr(tab.key)}
+            {tab.label}
             {tab.id === "receipts" && pendingSubs.length > 0 && (
               <span className="ms-1.5 inline-flex items-center justify-center rounded-full bg-[#FBBF24] text-[#0A0F1C] px-1.5 text-[10px] font-extrabold tabular-nums">
                 {pendingSubs.length}
@@ -186,7 +197,7 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
                 tone="cyan"
                 variant="subtle"
                 className="text-xs py-1.5 px-3"
-                icon={<ArrowRight className="w-3.5 h-3.5" />}
+                icon={<ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />}
                 onClick={() => onNavigate("analytics")}
               >
                 {tr("att_open_full_dash")}
@@ -319,9 +330,20 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
               </div>
             )}
 
-            <CosmicButton type="button" tone="gold" className="w-full" onClick={() => setSettleOpen(true)}>
-              {tr("run_settlement")}
-            </CosmicButton>
+            <div className="flex flex-wrap gap-2">
+              <CosmicButton type="button" tone="gold" className="flex-1" onClick={() => setSettleOpen(true)}>
+                {tr("run_settlement")}
+              </CosmicButton>
+              <CosmicButton
+                type="button"
+                tone="cyan"
+                variant="outline"
+                icon={<Download className="w-4 h-4" />}
+                onClick={exportFinancialCsv}
+              >
+                {tr("export_csv_cta")}
+              </CosmicButton>
+            </div>
           </CosmicCard>
 
           {/* Groups & Halls */}
@@ -337,7 +359,10 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
                 variant="subtle"
                 className="text-xs py-1.5 px-3"
                 icon={<Plus className="w-3.5 h-3.5" />}
-                onClick={() => setAddGroupOpen(true)}
+                onClick={() => {
+                  setGroupFormError(null);
+                  setAddGroupOpen(true);
+                }}
               >
                 {tr("add_group")}
               </CosmicButton>
@@ -401,7 +426,10 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
                   variant="subtle"
                   className="text-xs py-1.5 px-3"
                   icon={<Plus className="w-3.5 h-3.5" />}
-                  onClick={() => setAddResOpen(true)}
+                  onClick={() => {
+                    setResFormError(null);
+                    setAddResOpen(true);
+                  }}
                 >
                   {tr("add_resource")}
                 </CosmicButton>
@@ -498,6 +526,7 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
                         onClick={() => {
                           setRejectTarget(sub);
                           setRejectReason("");
+                          setRejectError(null);
                         }}
                       >
                         {tr("reject")}
@@ -522,7 +551,10 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
                 variant="subtle"
                 className="text-xs py-1.5 px-3"
                 icon={<Plus className="w-3.5 h-3.5" />}
-                onClick={() => setAddChannelOpen(true)}
+                onClick={() => {
+                  setChannelFormError(null);
+                  setAddChannelOpen(true);
+                }}
               >
                 {tr("add_channel")}
               </CosmicButton>
@@ -592,6 +624,16 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
         </div>
       )}
 
+      {/* TAB 4: EXAMS, HOMEWORK, MAKEUPS, COMMUNICATION & AEGIS SECURITY */}
+      {subTab === "security_ops" && (
+        <div className="space-y-5">
+          <ExamFortressView role={UserRole.TEACHER} />
+          <HomeworkPanel role={UserRole.TEACHER} />
+          <CommunicationHubPanel role={UserRole.TEACHER} />
+          <AegisSecurityPanel role={UserRole.TEACHER} />
+        </div>
+      )}
+
       {/* Settlement Confirmation Modal */}
       <ModalDialog
         open={settleOpen}
@@ -624,6 +666,12 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
       {/* Add Group Modal */}
       <ModalDialog open={addGroupOpen} title={tr("add_group")} onClose={() => setAddGroupOpen(false)}>
         <div className="space-y-3">
+          {groupFormError && (
+            <div className="flex items-center gap-2 rounded-xl bg-[#F87171]/15 border border-[#F87171]/40 px-3 py-2 text-xs text-[#F87171]">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{groupFormError}</span>
+            </div>
+          )}
           <div>
             <label className="block text-xs text-[#94A3B8] mb-1">{tr("group_name")}</label>
             <input
@@ -669,7 +717,12 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
             tone="cyan"
             className="w-full"
             onClick={() => {
-              createGroup(gName, gSchedule, gCapacity, gPrice);
+              const res = createGroup(gName, gSchedule, gCapacity, gPrice);
+              if (!res.ok) {
+                setGroupFormError(res.error ?? tr("validation_required"));
+                return;
+              }
+              setGroupFormError(null);
               setGName("");
               setGSchedule("");
               setAddGroupOpen(false);
@@ -683,6 +736,11 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
       {/* Add Resource Modal */}
       <ModalDialog open={addResOpen} title={tr("add_resource")} onClose={() => setAddResOpen(false)}>
         <div className="space-y-3">
+          {resFormError && (
+            <div className="rounded-xl bg-[#F87171]/15 border border-[#F87171]/40 px-3 py-2 text-xs text-[#F87171]">
+              {resFormError}
+            </div>
+          )}
           <div>
             <label className="block text-xs text-[#94A3B8] mb-1">{tr("resource_name")}</label>
             <input
@@ -727,7 +785,12 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
             tone="purple"
             className="w-full"
             onClick={() => {
+              if (!rName.trim()) {
+                setResFormError(tr("validation_required"));
+                return;
+              }
               addResource(rName, rType, rCost);
+              setResFormError(null);
               setRName("");
               setAddResOpen(false);
             }}
@@ -745,6 +808,11 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
       >
         {rejectTarget && (
           <div className="space-y-3">
+            {rejectError && (
+              <div className="rounded-xl bg-[#F87171]/15 border border-[#F87171]/40 px-3 py-2 text-xs text-[#F87171]">
+                {rejectError}
+              </div>
+            )}
             <input
               type="text"
               value={rejectReason}
@@ -757,6 +825,10 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
               tone="crimson"
               className="w-full"
               onClick={() => {
+                if (!rejectReason.trim()) {
+                  setRejectError(tr("validation_required"));
+                  return;
+                }
                 rejectSubmission(rejectTarget, rejectReason);
                 setRejectTarget(null);
               }}
@@ -770,6 +842,11 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
       {/* Add Payment Channel Modal */}
       <ModalDialog open={addChannelOpen} title={tr("add_channel")} onClose={() => setAddChannelOpen(false)}>
         <div className="space-y-3">
+          {channelFormError && (
+            <div className="rounded-xl bg-[#F87171]/15 border border-[#F87171]/40 px-3 py-2 text-xs text-[#F87171]">
+              {channelFormError}
+            </div>
+          )}
           <div>
             <label className="block text-xs text-[#94A3B8] mb-1">{tr("channel_name")}</label>
             <input
@@ -780,7 +857,7 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
             />
           </div>
           <div>
-            <label className="block text-xs text-[#94A3B8] mb-1">Type</label>
+            <label className="block text-xs text-[#94A3B8] mb-1">{isAr ? "نوع القناة" : "Channel Type"}</label>
             <select
               value={chType}
               onChange={(e) => setChType(e.target.value)}
@@ -816,7 +893,12 @@ export const TeacherOpsScreen: React.FC<{ onNavigate: (dest: AppDestination) => 
             tone="cyan"
             className="w-full"
             onClick={() => {
+              if (!chName.trim() || !chRef.trim()) {
+                setChannelFormError(tr("validation_required"));
+                return;
+              }
               addPaymentChannel(chName, chType, chRef, chFee);
+              setChannelFormError(null);
               setChName("");
               setChRef("");
               setAddChannelOpen(false);

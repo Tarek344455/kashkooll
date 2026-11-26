@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { BookOpen, ImagePlus, RefreshCw, Send, Square, Volume2, X } from "lucide-react";
+import { BookOpen, ImagePlus, RefreshCw, Send, SlidersHorizontal, Square, Volume2, X } from "lucide-react";
 import { useKashkool } from "../context/KashkoolContext";
 import { compressImageFile } from "../core/utils/browserUtils";
 import { AppLanguage } from "../types/kashkool";
 import { CosmicButton, CosmicCard, ShimmerCard } from "../components/CosmicUi";
+import { CognitiveReplyBadge, MoodCheckInBar, StudentMemoryPanel } from "../components/CognitiveMemoryCards";
 
 export const StudyAssistantScreen: React.FC<{
   initialPrompt?: string | null;
@@ -23,6 +24,7 @@ export const StudyAssistantScreen: React.FC<{
   const [prompt, setPrompt] = useState("");
   const [attachedPhoto, setAttachedPhoto] = useState<string | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -85,16 +87,31 @@ export const StudyAssistantScreen: React.FC<{
     <div className="flex flex-col h-[calc(100vh-11rem)] md:h-[calc(100vh-7.5rem)] space-y-3">
       {/* Header */}
       <CosmicCard tone="cyan" className="py-3 px-4 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <BookOpen className="w-5 h-5 text-[#38BDF8] shrink-0" />
-          <div>
-            <h2 className="text-sm sm:text-base font-extrabold text-[#F1F5F9]">
-              {tr("assistant_title")}
-            </h2>
-            <p className="text-xs text-[#94A3B8]">{tr("assistant_subtitle")}</p>
+        <div className="flex items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <BookOpen className="w-5 h-5 text-[#38BDF8] shrink-0" />
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-base font-extrabold text-[#F1F5F9] truncate">
+                {tr("assistant_title")}
+              </h2>
+              <p className="text-xs text-[#94A3B8] truncate">{tr("assistant_subtitle")}</p>
+            </div>
           </div>
+          <CosmicButton
+            type="button"
+            tone={memoryOpen ? "cyan" : "slate"}
+            variant="outline"
+            className="px-3 py-1.5 text-xs shrink-0"
+            icon={<SlidersHorizontal className="w-3.5 h-3.5" />}
+            onClick={() => setMemoryOpen((v) => !v)}
+          >
+            <span>{tr("memory_panel_cta")}</span>
+          </CosmicButton>
         </div>
       </CosmicCard>
+
+      <StudentMemoryPanel open={memoryOpen} onClose={() => setMemoryOpen(false)} />
+      <MoodCheckInBar />
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto space-y-3 pe-1">
@@ -110,6 +127,9 @@ export const StudyAssistantScreen: React.FC<{
                   : "bg-[#141D2F] border-white/12 text-[#F1F5F9]"
               }`}
             >
+              {!msg.fromUser && msg.cognitiveMeta && (
+                <CognitiveReplyBadge meta={msg.cognitiveMeta} language={language} />
+              )}
               {msg.attachedPhotoDataUrl && (
                 <img
                   src={msg.attachedPhotoDataUrl}
@@ -161,7 +181,10 @@ export const StudyAssistantScreen: React.FC<{
         ))}
 
         {assistantBusy && (
-          <div className="max-w-sm">
+          <div className="max-w-sm space-y-1.5">
+            <p className="text-[11px] font-semibold text-[#38BDF8] px-1">
+              {tr("cognitive_thinking_label")}
+            </p>
             <ShimmerCard lines={3} />
           </div>
         )}

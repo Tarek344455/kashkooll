@@ -3,6 +3,7 @@ import {
   Ban,
   CheckCircle2,
   Copy,
+  Download,
   ImagePlus,
   Receipt,
   ScanLine,
@@ -14,13 +15,15 @@ import { useKashkool } from "../context/KashkoolContext";
 import { EgyptValidators } from "../core/utils/egyptValidators";
 import { copyToClipboard } from "../core/utils/browserUtils";
 import { ledgerKindLabel } from "../core/l10n/appStrings";
-import { AppLanguage, LedgerKind, SubmissionStatus } from "../types/kashkool";
+import { AppLanguage, LedgerKind, SubmissionStatus, UserRole } from "../types/kashkool";
 import { CosmicButton, CosmicCard, ModalDialog, StatusBadge } from "../components/CosmicUi";
 
 export const WalletAndPaymentsScreen: React.FC = () => {
   const {
     language,
+    activeRole,
     activeStudent,
+    linkedParentStudent,
     channels,
     submissions,
     ledger,
@@ -33,9 +36,12 @@ export const WalletAndPaymentsScreen: React.FC = () => {
     scanAttachedReceipt,
     submitPaymentReceipt,
     voidLedgerEntry,
+    exportFinancialCsv,
     showSnackbar,
     tr,
   } = useKashkool();
+  const displayStudent =
+    activeRole === UserRole.PARENT ? linkedParentStudent ?? activeStudent : activeStudent;
 
   const isAr = language === AppLanguage.AR;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -71,7 +77,7 @@ export const WalletAndPaymentsScreen: React.FC = () => {
   return (
     <div className="space-y-5">
       {/* Balance Summary */}
-      {activeStudent && (
+      {displayStudent && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <CosmicCard tone="emerald" className="space-y-1">
             <div className="flex items-center gap-2 text-xs text-[#94A3B8]">
@@ -79,17 +85,17 @@ export const WalletAndPaymentsScreen: React.FC = () => {
               <span>{tr("wallet_balance")}</span>
             </div>
             <p className="text-2xl font-extrabold text-[#34D399] tabular-nums">
-              {EgyptValidators.formatPiasters(activeStudent.walletBalancePiasters, language)}
+              {EgyptValidators.formatPiasters(displayStudent.walletBalancePiasters, language)}
             </p>
           </CosmicCard>
-          <CosmicCard tone={activeStudent.dueBalancePiasters > 0 ? "amber" : "slate"} className="space-y-1">
+          <CosmicCard tone={displayStudent.dueBalancePiasters > 0 ? "amber" : "slate"} className="space-y-1">
             <p className="text-xs text-[#94A3B8]">{tr("due_balance")}</p>
             <p
               className={`text-2xl font-extrabold tabular-nums ${
-                activeStudent.dueBalancePiasters > 0 ? "text-[#FBBF24]" : "text-[#94A3B8]"
+                displayStudent.dueBalancePiasters > 0 ? "text-[#FBBF24]" : "text-[#94A3B8]"
               }`}
             >
-              {EgyptValidators.formatPiasters(activeStudent.dueBalancePiasters, language)}
+              {EgyptValidators.formatPiasters(displayStudent.dueBalancePiasters, language)}
             </p>
           </CosmicCard>
         </div>
@@ -343,12 +349,24 @@ export const WalletAndPaymentsScreen: React.FC = () => {
 
       {/* Immutable Ledger */}
       <CosmicCard tone="slate" className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-[#34D399]" />
             <h3 className="text-sm font-bold text-[#F1F5F9]">{tr("immutable_ledger")}</h3>
           </div>
-          <StatusBadge tone="emerald" label={tr("os_or_verified_badge")} />
+          <div className="flex items-center gap-2">
+            <StatusBadge tone="emerald" label={tr("os_or_verified_badge")} />
+            <CosmicButton
+              type="button"
+              tone="cyan"
+              variant="outline"
+              className="text-xs py-1 px-2.5"
+              icon={<Download className="w-3.5 h-3.5" />}
+              onClick={exportFinancialCsv}
+            >
+              {tr("export_csv_cta")}
+            </CosmicButton>
+          </div>
         </div>
 
         <div className="space-y-2">

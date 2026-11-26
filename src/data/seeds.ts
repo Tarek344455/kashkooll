@@ -1,13 +1,21 @@
 import {
+  AnnouncementEntity,
   AttendanceEntity,
   AvailabilityStatus,
   GroupEntity,
+  HomeworkAssignmentEntity,
+  HomeworkSubmissionEntity,
   LedgerEntryEntity,
   LedgerKind,
+  MakeupSessionEntity,
+  MistakeBankEntry,
+  ParentAlertEntity,
   PaymentChannelEntity,
   ResourceItem,
   ResourceType,
   StudentEntity,
+  SupportTicketEntity,
+  UserRole,
 } from "../types/kashkool";
 
 export const seedGroups: GroupEntity[] = [
@@ -68,6 +76,7 @@ export const seedStudents: StudentEntity[] = [
     masteryPercent: 88,
     isBlocked: false,
     qrActivationCode: "KSH2026A",
+    parentInviteCode: "KSHP-2026A",
   },
   {
     id: "stu-2",
@@ -81,6 +90,7 @@ export const seedStudents: StudentEntity[] = [
     masteryPercent: 92,
     isBlocked: false,
     qrActivationCode: "KSH2026B",
+    parentInviteCode: "KSHP-2026B",
   },
   {
     id: "stu-3",
@@ -94,6 +104,7 @@ export const seedStudents: StudentEntity[] = [
     masteryPercent: 79,
     isBlocked: false,
     qrActivationCode: null,
+    parentInviteCode: "KSHP-2026C",
   },
   {
     id: "stu-4",
@@ -107,6 +118,7 @@ export const seedStudents: StudentEntity[] = [
     masteryPercent: 65,
     isBlocked: true,
     qrActivationCode: null,
+    parentInviteCode: "KSHP-2026D",
   },
 ];
 
@@ -317,4 +329,151 @@ export function initialAttendance(nowMillis: number): AttendanceEntity[] {
     }
   });
   return entries;
+}
+
+export function initialHomeworkAssignments(nowMillis: number): HomeworkAssignmentEntity[] {
+  return [
+    {
+      id: "hw-calc-1",
+      groupId: "grp-math-3sec",
+      titleAr: "واجب قاعدة السلسلة والمشتقات العليا",
+      titleEn: "Chain Rule & Higher Derivatives Sheet",
+      descriptionAr: "حل المسائل من ١ إلى ٨ في ملزمة التفاضل مع كتابة خطوات الحل بوضوح أو إرفاق صورة الكشكول.",
+      descriptionEn: "Solve exercises 1–8 from the Calculus booklet with clear steps or attach a notebook photo.",
+      dueDateLabel: "الخميس القادم 8:00 م",
+      maxScore: 20,
+      createdAtMillis: nowMillis - 7_200_000,
+    },
+    {
+      id: "hw-phys-1",
+      groupId: "grp-phys-3sec",
+      titleAr: "شيت قانون كيرشوف الثاني",
+      titleEn: "Kirchhoff Voltage Law Problem Set",
+      descriptionAr: "تطبيق مسارات كيرشوف المغلقة على ٣ دوائر كهربية متدرجة الصعوبة.",
+      descriptionEn: "Apply closed-loop equations on 3 multi-branch circuits.",
+      dueDateLabel: "الجمعة 6:00 م",
+      maxScore: 20,
+      createdAtMillis: nowMillis - 14_400_000,
+    },
+  ];
+}
+
+export function initialHomeworkSubmissions(nowMillis: number): HomeworkSubmissionEntity[] {
+  return [
+    {
+      id: "hwsub-1",
+      assignmentId: "hw-calc-1",
+      studentId: "stu-2",
+      studentNameAr: "سارة خالد حسن",
+      studentNameEn: "Sara Khaled Hassan",
+      notes: "تم حل جميع المسائل الثمانية مع التحقق من إشارة المشتقة الثانية.",
+      attachmentDataUrl: null,
+      score: null,
+      feedback: null,
+      status: "submitted",
+      submittedAtMillis: nowMillis - 1_800_000,
+      syncStatus: "synced",
+    },
+  ];
+}
+
+export function initialMistakeBank(nowMillis: number): MistakeBankEntry[] {
+  return [
+    {
+      id: "mis-seed-1",
+      studentId: "stu-1",
+      sourceType: "quiz",
+      topicTagAr: "قاعدة السلسلة",
+      topicTagEn: "Chain Rule",
+      questionPromptAr: "أوجد مشتقة ص = جا(٣س² + ١) بالنسبة إلى س.",
+      questionPromptEn: "Find d/dx of y = sin(3x² + 1).",
+      wrongAnswer: "جتا(٣س² + ١)",
+      correctAnswer: "٦س · جتا(٣س² + ١)",
+      remedialAr: "تذكر دائماً ضرب مشتقة الدالة الخارجية في مشتقة ما بداخل القوس (٦س).",
+      remedialEn: "Always multiply the outer derivative by the inner derivative (6x).",
+      aiBreakdown: null,
+      mastered: false,
+      createdAtMillis: nowMillis - 3_600_000,
+      syncStatus: "synced",
+    },
+  ];
+}
+
+export function initialAnnouncements(nowMillis: number): AnnouncementEntity[] {
+  return [
+    {
+      id: "ann-1",
+      groupId: null,
+      titleAr: "مراجعة ليلة الامتحان المحصّنة — الأسبوع القادم",
+      titleEn: "Proctored Unit Revision Assessment — Next Week",
+      bodyAr: "يرجى التأكد من تفعيل كود الحضور السريع والدخول قبل موعد الامتحان بـ 10 دقائق.",
+      bodyEn: "Please ensure your QR attendance pass is ready and join 10 minutes before the assessment.",
+      authorName: "أ. طارق عزت",
+      pinned: true,
+      readByIds: ["stu-2"],
+      createdAtMillis: nowMillis - 5_400_000,
+    },
+  ];
+}
+
+export function initialSupportTickets(nowMillis: number): SupportTicketEntity[] {
+  return [
+    {
+      id: "tkt-1",
+      authorId: "parent-1",
+      authorName: "ولي أمر · أحمد محمد",
+      authorRole: UserRole.PARENT,
+      subject: "استفسار عن موعد الحصة التعويضية",
+      message: "هل يمكن حضور حصة التفاضل التعويضية في مجموعة الثلاثاء بدلاً من السبت؟",
+      replyText: "أهلاً بحضرتك، متاح الحضور التعويضي يوم الثلاثاء الساعة 4 م في قاعة النخبة.",
+      status: "answered",
+      createdAtMillis: nowMillis - 21_600_000,
+      syncStatus: "synced",
+    },
+  ];
+}
+
+export function initialParentAlerts(nowMillis: number): ParentAlertEntity[] {
+  return [
+    {
+      id: "pal-1",
+      studentId: "stu-1",
+      kind: "arrival",
+      titleAr: "تأكيد حضور الحصة",
+      titleEn: "Session Check-In Confirmed",
+      bodyAr: "حضر أحمد محمد علي حصة التفاضل والتكامل في الموعد المحدد بالتمام.",
+      bodyEn: "Ahmed Mohamed Ali checked in to Calculus Group A on time.",
+      isRead: false,
+      createdAtMillis: nowMillis - 2_400_000,
+    },
+    {
+      id: "pal-2",
+      studentId: "stu-2",
+      kind: "due",
+      titleAr: "تنبيه لطيف بالرصيد",
+      titleEn: "Friendly Balance Reminder",
+      bodyAr: "متبقي 80 ج.م على حساب سارة خالد حسن للحصة القادمة.",
+      bodyEn: "80 EGP pending balance for Sara Khaled Hassan ahead of next session.",
+      isRead: false,
+      createdAtMillis: nowMillis - 1_200_000,
+    },
+  ];
+}
+
+export function initialMakeupSessions(nowMillis: number): MakeupSessionEntity[] {
+  return [
+    {
+      id: "mkp-1",
+      studentId: "stu-1",
+      studentNameAr: "أحمد محمد علي",
+      studentNameEn: "Ahmed Mohamed Ali",
+      fromGroupId: "grp-math-3sec",
+      toGroupId: "grp-phys-3sec",
+      scheduledDateLabel: "الأربعاء 6:00 م",
+      note: "تعويض غياب بعذر طبي",
+      status: "scheduled",
+      createdAtMillis: nowMillis - 9_000_000,
+      syncStatus: "synced",
+    },
+  ];
 }

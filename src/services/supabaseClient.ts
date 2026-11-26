@@ -168,6 +168,46 @@ export interface SyncPendingPayload {
   ledger: LedgerEntryEntity[];
   submissions: PaymentSubmissionEntity[];
   channels: PaymentChannelEntity[];
+  homeworkSubmissions?: Array<{
+    id: string;
+    assignmentId: string;
+    studentId: string;
+    notes: string;
+    attachmentDataUrl?: string | null;
+    score?: number | null;
+    feedback?: string | null;
+    status: string;
+    syncStatus: string;
+  }>;
+  mistakeBank?: Array<{
+    id: string;
+    studentId: string;
+    sourceType: string;
+    topicTagAr: string;
+    questionPromptAr: string;
+    wrongAnswer: string;
+    correctAnswer: string;
+    mastered: boolean;
+    syncStatus: string;
+  }>;
+  makeupSessions?: Array<{
+    id: string;
+    studentId: string;
+    fromGroupId: string;
+    toGroupId: string;
+    scheduledDateLabel: string;
+    status: string;
+    syncStatus: string;
+  }>;
+  supportTickets?: Array<{
+    id: string;
+    authorRole: string;
+    subject: string;
+    message: string;
+    replyText?: string | null;
+    status: string;
+    syncStatus: string;
+  }>;
 }
 
 export interface SyncResult {
@@ -275,6 +315,79 @@ export async function syncPendingToSupabase(payload: SyncPendingPayload): Promis
       );
       if (error) throw new Error(error.message);
       syncedRecords += 1;
+    }
+
+    const pendingHw = (payload.homeworkSubmissions ?? []).filter((h) => h.syncStatus === "pending");
+    if (pendingHw.length > 0) {
+      const { error } = await client.from("homework_submissions").upsert(
+        pendingHw.map((h) => ({
+          id: h.id,
+          tenant_id: payload.tenantId,
+          assignment_id: h.assignmentId,
+          student_id: h.studentId,
+          notes: h.notes,
+          attachment_data_url: h.attachmentDataUrl ?? null,
+          score: h.score ?? null,
+          teacher_feedback: h.feedback ?? null,
+          status: h.status,
+        })),
+        { onConflict: "id" }
+      );
+      if (!error) syncedRecords += pendingHw.length;
+    }
+
+    const pendingMistakes = (payload.mistakeBank ?? []).filter((m) => m.syncStatus === "pending");
+    if (pendingMistakes.length > 0) {
+      const { error } = await client.from("mistake_bank").upsert(
+        pendingMistakes.map((m) => ({
+          id: m.id,
+          tenant_id: payload.tenantId,
+          student_id: m.studentId,
+          source_type: m.sourceType,
+          topic_tag: m.topicTagAr,
+          question_prompt: m.questionPromptAr,
+          wrong_answer: m.wrongAnswer,
+          correct_answer: m.correctAnswer,
+          mastered: m.mastered,
+        })),
+        { onConflict: "id" }
+      );
+      if (!error) syncedRecords += pendingMistakes.length;
+    }
+
+    const pendingMakeups = (payload.makeupSessions ?? []).filter((m) => m.syncStatus === "pending");
+    if (pendingMakeups.length > 0) {
+      const { error } = await client.from("makeup_sessions").upsert(
+        pendingMakeups.map((m) => ({
+          id: m.id,
+          tenant_id: payload.tenantId,
+          student_id: m.studentId,
+          from_group_id: m.fromGroupId,
+          to_group_id: m.toGroupId,
+          scheduled_date: m.scheduledDateLabel,
+          status: m.status,
+        })),
+        { onConflict: "id" }
+      );
+      if (!error) syncedRecords += pendingMakeups.length;
+    }
+
+    const pendingTickets = (payload.supportTickets ?? []).filter((tk) => tk.syncStatus === "pending");
+    if (pendingTickets.length > 0) {
+      const { error } = await client.from("support_tickets").upsert(
+        pendingTickets.map((tk) => ({
+          id: tk.id,
+          tenant_id: payload.tenantId,
+          author_id: session.user.id,
+          author_role: tk.authorRole,
+          subject: tk.subject,
+          message: tk.message,
+          reply_text: tk.replyText ?? null,
+          status: tk.status,
+        })),
+        { onConflict: "id" }
+      );
+      if (!error) syncedRecords += pendingTickets.length;
     }
 
     return { mode: "supabase", syncedRecords };

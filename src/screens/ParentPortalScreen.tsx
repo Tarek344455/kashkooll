@@ -1,10 +1,12 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   AlertCircle,
+  Bell,
   CheckCircle2,
   Copy,
   Flame,
   HeartHandshake,
+  Link2,
   RefreshCw,
   Share2,
   Shield,
@@ -12,18 +14,20 @@ import {
 } from "lucide-react";
 import { useKashkool } from "../context/KashkoolContext";
 import { EgyptValidators } from "../core/utils/egyptValidators";
-import { copyToClipboard, shareOrCopyText } from "../core/utils/browserUtils";
-import { AppDestination, AppLanguage } from "../types/kashkool";
+import { copyToClipboard, formatShortTime, shareOrCopyText } from "../core/utils/browserUtils";
+import { AppDestination, AppLanguage, UserRole } from "../types/kashkool";
 import { CosmicButton, CosmicCard, ShimmerCard, StatusBadge } from "../components/CosmicUi";
 import { PerformanceEvaluationCard } from "../components/PerformanceEvaluationCard";
+import { CommunicationHubPanel } from "../components/AcademicHubPanels";
 
 export const ParentPortalScreen: React.FC<{ onNavigate: (dest: AppDestination) => void }> = ({
   onNavigate,
 }) => {
   const {
     language,
-    activeStudent,
+    linkedParentStudent,
     attendance,
+    parentAlerts,
     operatingReport,
     parentDigestState,
     reassurancePulseAtMillis,
@@ -32,20 +36,66 @@ export const ParentPortalScreen: React.FC<{ onNavigate: (dest: AppDestination) =
     buildParentReportShareText,
     notifyMessageCopied,
     refreshParentWeeklyDigest,
+    linkChildByInviteCode,
+    markParentAlertRead,
     showSnackbar,
     tr,
   } = useKashkool();
 
   const isAr = language === AppLanguage.AR;
-  const student = activeStudent;
+  const student = linkedParentStudent;
   const profile = student ? operatingReport.studentProfiles[student.id] : undefined;
   const coveredSessions = profile?.coveredSessions ?? 3;
   const studentAttendance = student
     ? attendance.filter((a) => a.studentId === student.id).slice(0, 8)
     : [];
+  const childAlerts = student ? parentAlerts.filter((al) => al.studentId === student.id) : [];
+
+  const [inviteCodeInput, setInviteCodeInput] = useState("");
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   return (
     <div className="space-y-5">
+      {/* One-Tap Child Invite Code Linker */}
+      <CosmicCard tone="slate" className="space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Link2 className="w-4 h-4 text-[#38BDF8]" />
+            <h3 className="text-sm font-bold text-[#F1F5F9]">{tr("parent_link_title")}</h3>
+          </div>
+          {student?.parentInviteCode && (
+            <StatusBadge tone="cyan" label={`${student.parentInviteCode}`} />
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <input
+            type="text"
+            dir="ltr"
+            value={inviteCodeInput}
+            onChange={(e) => setInviteCodeInput(e.target.value)}
+            placeholder={tr("parent_link_hint")}
+            className="flex-1 min-w-[200px] rounded-xl bg-[#0A0F1C] border border-white/15 px-3 py-2 text-xs font-mono-tabular text-[#F1F5F9]"
+          />
+          <CosmicButton
+            type="button"
+            tone="cyan"
+            variant="outline"
+            className="text-xs py-2 px-3"
+            onClick={() => {
+              const res = linkChildByInviteCode(inviteCodeInput);
+              if (!res.ok) {
+                setLinkError(res.error ?? tr("validation_required"));
+                return;
+              }
+              setLinkError(null);
+              setInviteCodeInput("");
+            }}
+          >
+            {tr("parent_link_cta")}
+          </CosmicButton>
+        </div>
+        {linkError && <p className="text-xs text-[#F87171]">{linkError}</p>}
+      </CosmicCard>
       {/* Student Overview Card */}
       {student && (
         <CosmicCard tone="purple" className="space-y-3">
@@ -279,6 +329,50 @@ export const ParentPortalScreen: React.FC<{ onNavigate: (dest: AppDestination) =
           </CosmicCard>
         )}
       </div>
+
+      {/* Instant Arrival & Exam Alerts Feed */}
+      <CosmicCard tone="amber" className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Bell className="w-4 h-4 text-[#FBBF24]" />
+            <h3 className="text-sm font-bold text-[#F1F5F9]">{tr("parent_alerts_title")}</h3>
+          </div>
+          <StatusBadge
+            tone="amber"
+            label={`${childAlerts.filter((a) => !a.isRead).length}`}
+          />
+        </div>
+        {childAlerts.length === 0 ? (
+          <p className="text-xs text-[#94A3B8]">{tr("timeline_empty")}</p>
+        ) : (
+          <div className="space-y-2">
+            {childAlerts.slice(0, 6).map((al) => (
+              <div
+                key={al.id}
+                onClick={() => markParentAlertRead(al.id)}
+                className={`rounded-xl border p-3 text-xs space-y-1 cursor-pointer transition-colors ${
+                  al.isRead
+                    ? "bg-[#0A0F1C]/60 border-white/10"
+                    : "bg-[#FBBF24]/10 border-[#FBBF24]/35"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-[#F1F5F9]">
+                    {isAr ? al.titleAr : al.titleEn}
+                  </span>
+                  <span className="text-[11px] text-[#94A3B8] tabular-nums">
+                    {formatShortTime(al.createdAtMillis, language)}
+                  </span>
+                </div>
+                <p className="text-[#94A3B8]">{isAr ? al.bodyAr : al.bodyEn}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </CosmicCard>
+
+      {/* Center Announcements & Support Tickets */}
+      <CommunicationHubPanel role={UserRole.PARENT} />
     </div>
   );
 };

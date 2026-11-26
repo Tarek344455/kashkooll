@@ -16,10 +16,12 @@ import {
 import { useKashkool } from "../context/KashkoolContext";
 import { EgyptValidators } from "../core/utils/egyptValidators";
 import { copyToClipboard } from "../core/utils/browserUtils";
-import { AppLanguage, LedgerKind, QrVerifyStatus, StudentEntity, StudentRiskTier } from "../types/kashkool";
+import { AppLanguage, LedgerKind, QrVerifyStatus, StudentEntity, StudentRiskTier, UserRole } from "../types/kashkool";
 import { CosmicButton, CosmicCard, DynamicQrCode, EmptyState, ModalDialog, StatusBadge } from "../components/CosmicUi";
 import { SecretaryNoticeModal } from "../components/AiToolkitCards";
 import { QrScannerModal } from "../components/QrScannerModal";
+import { CommunicationHubPanel } from "../components/AcademicHubPanels";
+import { AegisSecurityPanel } from "../components/AegisSecurityPanel";
 
 export const SecretaryDeskScreen: React.FC = () => {
   const {
@@ -62,11 +64,13 @@ export const SecretaryDeskScreen: React.FC = () => {
   const [walkInPhone, setWalkInPhone] = useState("");
   const [walkInGroupId, setWalkInGroupId] = useState(groups[0]?.id ?? "");
   const [walkInTopUp, setWalkInTopUp] = useState("");
+  const [walkInError, setWalkInError] = useState<string | null>(null);
 
   const [collectTarget, setCollectTarget] = useState<StudentEntity | null>(null);
   const [collectKind, setCollectKind] = useState<LedgerKind>(LedgerKind.CASH_TOPUP);
   const [collectAmount, setCollectAmount] = useState("");
   const [collectNote, setCollectNote] = useState("");
+  const [collectError, setCollectError] = useState<string | null>(null);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -241,6 +245,7 @@ export const SecretaryDeskScreen: React.FC = () => {
           icon={<UserPlus className="w-4 h-4" />}
           onClick={() => {
             setWalkInGroupId(operatingReport.groupAllocation.optimalWalkInGroupId ?? groups[0]?.id ?? "");
+            setWalkInError(null);
             setWalkInOpen(true);
           }}
         >
@@ -367,6 +372,7 @@ export const SecretaryDeskScreen: React.FC = () => {
                       );
                       setCollectAmount("");
                       setCollectNote("");
+                      setCollectError(null);
                     }}
                   >
                     {tr("collect_cash")}
@@ -423,6 +429,10 @@ export const SecretaryDeskScreen: React.FC = () => {
         </div>
       )}
 
+      {/* Makeups, Announcements, Tickets & Security Feed */}
+      <AegisSecurityPanel role={UserRole.SECRETARY} />
+      <CommunicationHubPanel role={UserRole.SECRETARY} />
+
       {/* QR Camera Scanner Modal */}
       <QrScannerModal open={scannerOpen} onClose={() => setScannerOpen(false)} />
 
@@ -432,6 +442,11 @@ export const SecretaryDeskScreen: React.FC = () => {
       {/* Walk-In Student Modal */}
       <ModalDialog open={walkInOpen} title={tr("walkin_dialog_title")} onClose={() => setWalkInOpen(false)}>
         <div className="space-y-3">
+          {walkInError && (
+            <div className="rounded-xl bg-[#F87171]/15 border border-[#F87171]/40 px-3 py-2 text-xs text-[#F87171]">
+              {walkInError}
+            </div>
+          )}
           <div>
             <label className="block text-xs text-[#94A3B8] mb-1">{tr("walkin_name")}</label>
             <input
@@ -483,7 +498,12 @@ export const SecretaryDeskScreen: React.FC = () => {
             tone="emerald"
             className="w-full"
             onClick={() => {
+              if (!walkInName.trim() || !EgyptValidators.normalizeEgyptianPhone(walkInPhone)) {
+                setWalkInError(tr("err_invalid_phone"));
+                return;
+              }
               addWalkInStudent(walkInName, walkInPhone, walkInGroupId, walkInTopUp);
+              setWalkInError(null);
               setWalkInName("");
               setWalkInPhone("");
               setWalkInTopUp("");
@@ -565,12 +585,23 @@ export const SecretaryDeskScreen: React.FC = () => {
               />
             </div>
 
+            {collectError && (
+              <div className="rounded-xl bg-[#F87171]/15 border border-[#F87171]/40 px-3 py-2 text-xs text-[#F87171]">
+                {collectError}
+              </div>
+            )}
+
             <CosmicButton
               type="button"
               tone="emerald"
               className="w-full"
               onClick={() => {
+                if (!EgyptValidators.egpStringToPiasters(collectAmount)) {
+                  setCollectError(tr("validation_required"));
+                  return;
+                }
                 recordCashDeskEntry(collectTarget, collectKind, collectAmount, collectNote);
+                setCollectError(null);
                 setCollectTarget(null);
               }}
             >

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import {
   ArrowLeft,
+  Brain,
   CheckCircle2,
+  ClipboardList,
   Clock,
   HelpCircle,
   Play,
@@ -10,17 +12,22 @@ import {
   Wifi,
 } from "lucide-react";
 import { useKashkool } from "../context/KashkoolContext";
-import { AppLanguage, CourseUnit } from "../types/kashkool";
+import { AppLanguage, CourseUnit, UserRole } from "../types/kashkool";
 import { CosmicButton, CosmicCard, ShimmerCard, StatusBadge } from "../components/CosmicUi";
 import { LessonRevisionDeckCard } from "../components/AiToolkitCards";
 import { PerformanceEvaluationCard } from "../components/PerformanceEvaluationCard";
+import { ExamFortressView } from "../components/ExamFortressView";
+import { HomeworkPanel, MistakeBankPanel } from "../components/AcademicHubPanels";
 
 export const CoursesAndQuizScreen: React.FC<{
-  initialTab?: "courses" | "quiz";
+  initialTab?: "courses" | "quiz" | "exams" | "homework" | "mistakes";
   onAskAssistant: (prompt: string, subject?: string) => void;
 }> = ({ initialTab = "courses", onAskAssistant }) => {
   const {
     language,
+    activeRole,
+    activeStudent,
+    mistakeBank,
     courses,
     quizQuestions,
     adaptiveQuizQuestions,
@@ -43,8 +50,11 @@ export const CoursesAndQuizScreen: React.FC<{
   } = useKashkool();
 
   const isAr = language === AppLanguage.AR;
-  const [tab, setTab] = useState<"courses" | "quiz">(initialTab);
+  const [tab, setTab] = useState<"courses" | "quiz" | "exams" | "homework" | "mistakes">(initialTab);
   const [lectureProgress, setLectureProgress] = useState(35);
+  const unmasteredMistakes = mistakeBank.filter(
+    (m) => m.studentId === (activeStudent?.id ?? "stu-1") && !m.mastered
+  ).length;
 
   // Quiz state
   const activeQuestions = adaptiveQuizQuestions ?? quizQuestions;
@@ -80,7 +90,7 @@ export const CoursesAndQuizScreen: React.FC<{
     const correct = selectedOpt === currentQuestion.correctIndex;
     setSubmittedAnswer(true);
     if (correct) setScore((s) => s + 1);
-    recordQuizOutcome(currentQuestion.id, correct);
+    recordQuizOutcome(currentQuestion.id, correct, currentQuestion.options[selectedOpt]);
   };
 
   const handleNextQuestion = () => {
@@ -105,11 +115,11 @@ export const CoursesAndQuizScreen: React.FC<{
     <div className="space-y-4">
       {/* Top Tabs + Data Saver Toggle */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setTab("courses")}
-            className={`rounded-xl border px-4 py-2 text-xs sm:text-sm font-bold cursor-pointer ${
+            className={`rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-bold cursor-pointer ${
               tab === "courses"
                 ? "bg-[#38BDF8]/18 border-[#38BDF8]/60 text-[#38BDF8]"
                 : "bg-[#141D2F] border-white/10 text-[#94A3B8]"
@@ -120,13 +130,54 @@ export const CoursesAndQuizScreen: React.FC<{
           <button
             type="button"
             onClick={() => setTab("quiz")}
-            className={`rounded-xl border px-4 py-2 text-xs sm:text-sm font-bold cursor-pointer ${
+            className={`rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-bold cursor-pointer ${
               tab === "quiz"
                 ? "bg-[#EAB308]/18 border-[#EAB308]/60 text-[#EAB308]"
                 : "bg-[#141D2F] border-white/10 text-[#94A3B8]"
             }`}
           >
             {tr("quiz_tab")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("exams")}
+            className={`rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-bold cursor-pointer inline-flex items-center gap-1.5 ${
+              tab === "exams"
+                ? "bg-[#34D399]/18 border-[#34D399]/60 text-[#34D399]"
+                : "bg-[#141D2F] border-white/10 text-[#94A3B8]"
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            {tr("exam_fortress_tab")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("homework")}
+            className={`rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-bold cursor-pointer inline-flex items-center gap-1.5 ${
+              tab === "homework"
+                ? "bg-[#A78BFA]/18 border-[#A78BFA]/60 text-[#A78BFA]"
+                : "bg-[#141D2F] border-white/10 text-[#94A3B8]"
+            }`}
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            {tr("homework_tab")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("mistakes")}
+            className={`rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-bold cursor-pointer inline-flex items-center gap-1.5 ${
+              tab === "mistakes"
+                ? "bg-[#FBBF24]/18 border-[#FBBF24]/60 text-[#FBBF24]"
+                : "bg-[#141D2F] border-white/10 text-[#94A3B8]"
+            }`}
+          >
+            <Brain className="w-3.5 h-3.5" />
+            {tr("mistake_bank_tab")}
+            {unmasteredMistakes > 0 && (
+              <span className="rounded-full bg-[#FBBF24] text-[#0A0F1C] px-1.5 text-[10px] font-extrabold tabular-nums">
+                {unmasteredMistakes}
+              </span>
+            )}
           </button>
         </div>
 
@@ -199,7 +250,7 @@ export const CoursesAndQuizScreen: React.FC<{
             tone="slate"
             variant="outline"
             className="text-xs py-1.5 px-3"
-            icon={<ArrowLeft className="w-3.5 h-3.5" />}
+            icon={<ArrowLeft className="w-3.5 h-3.5 rtl:rotate-180" />}
             onClick={closeLecture}
           >
             {tr("courses_tab")}
@@ -458,6 +509,20 @@ export const CoursesAndQuizScreen: React.FC<{
           )}
         </div>
       )}
+
+      {/* PROCTORED EXAMS TAB */}
+      {tab === "exams" && (
+        <ExamFortressView
+          role={activeRole === UserRole.STUDENT || activeRole === UserRole.PARENT ? activeRole : UserRole.STUDENT}
+          onOpenAssistant={onAskAssistant}
+        />
+      )}
+
+      {/* HOMEWORK TAB */}
+      {tab === "homework" && <HomeworkPanel role={activeRole} />}
+
+      {/* MISTAKE BANK TAB */}
+      {tab === "mistakes" && <MistakeBankPanel onAskAssistant={onAskAssistant} />}
     </div>
   );
 };

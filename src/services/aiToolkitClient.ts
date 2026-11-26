@@ -2,6 +2,8 @@ import {
   AiOperationalBriefing,
   AppLanguage,
   AssistantMessage,
+  CognitiveMeta,
+  EmotionalPulse,
   EvaluationTargetType,
   GroupEntity,
   LessonRevisionDeck,
@@ -10,6 +12,7 @@ import {
   QuizQuestion,
   ReceiptScanResult,
   SecretaryNoticeDraft,
+  StudentAiMemory,
   StudentEntity,
   StudentOrProfile,
   SystemOperatingReport,
@@ -17,11 +20,34 @@ import {
   UserRole,
 } from "../types/kashkool";
 import { EgyptValidators } from "../core/utils/egyptValidators";
+import {
+  buildDirectCognitivePlan,
+  directBrowserAi,
+  sanitizeDirectOutput,
+  type DirectChatMessage,
+} from "./directAiClient";
+
+function getBrowserActorId(): string {
+  try {
+    const key = "kashkool_browser_actor_id";
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = `usr-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    return "usr-ephemeral";
+  }
+}
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-kashkool-actor": getBrowserActorId(),
+    },
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -31,7 +57,75 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return data as T;
 }
 
+async function directJsonWithFallback<T>(params: {
+  prompt: string;
+  systemPrompt: string;
+  temperature?: number;
+  fallbackUrl: string;
+  fallbackBody: unknown;
+}): Promise<T> {
+  try {
+    const { data } = await directBrowserAi.chatJson<T>({
+      messages: [{ role: "user", content: params.prompt }],
+      systemPrompt: params.systemPrompt,
+      temperature: params.temperature ?? 0.4,
+    });
+    return data;
+  } catch {
+    return postJson<T>(params.fallbackUrl, params.fallbackBody);
+  }
+}
+
 export const AiToolkitClient = {
+  async fetchStudentMemory(studentId: string): Promise<StudentAiMemory> {
+    const res = await fetch(`/api/ai/memory?studentId=${encodeURIComponent(studentId)}`, {
+      headers: {
+        "x-kashkool-actor": studentId,
+        "x-kashkool-role": "student",
+      },
+    });
+    const data = (await res.json().catch(() => ({}))) as { memory?: StudentAiMemory; error?: string };
+    if (!res.ok || !data.memory) {
+      throw new Error(data.error || "Could not load adaptive memory");
+    }
+    return data.memory;
+  },
+
+  async updateStudentMemory(
+    studentId: string,
+    patch: Partial<Pick<StudentAiMemory, "learningPace" | "preferredStyle" | "tonePreference" | "academicTrack" | "weakTopics">>
+  ): Promise<StudentAiMemory> {
+    const res = await fetch("/api/ai/memory", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-kashkool-actor": studentId,
+        "x-kashkool-role": "student",
+      },
+      body: JSON.stringify({ studentId, ...patch }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { memory?: StudentAiMemory; error?: string };
+    if (!res.ok || !data.memory) {
+      throw new Error(data.error || "Could not update adaptive memory");
+    }
+    return data.memory;
+  },
+
+  async resetStudentMemory(studentId: string): Promise<StudentAiMemory> {
+    const res = await fetch(`/api/ai/memory?studentId=${encodeURIComponent(studentId)}`, {
+      method: "DELETE",
+      headers: {
+        "x-kashkool-actor": studentId,
+        "x-kashkool-role": "student",
+      },
+    });
+    const data = (await res.json().catch(() => ({}))) as { memory?: StudentAiMemory; error?: string };
+    if (!res.ok || !data.memory) {
+      throw new Error(data.error || "Could not reset adaptive memory");
+    }
+    return data.memory;
+  },
+
   async streamStudyChat(params: {
     prompt: string;
     history: AssistantMessage[];
@@ -40,16 +134,124 @@ export const AiToolkitClient = {
     subject: string;
     report: SystemOperatingReport;
     lang: AppLanguage;
+    explicitMood?: EmotionalPulse | null;
+    studentId?: string;
+    memory?: StudentAiMemory | null;
+    onMeta?: (meta: CognitiveMeta) => void;
     onChunk: (accumulated: string) => void;
-  }): Promise<string> {
+  }): Promise<{ text: string; meta?: CognitiveMeta }> {
     const knapsackSummary =
       params.report.studyKnapsack.selectedItems
         .map((i) => (params.lang === AppLanguage.AR ? i.titleAr : i.titleEn))
         .join(", ") || (params.lang === AppLanguage.AR ? "لا توجد موضوعات متأخرة" : "No overdue topics");
 
+    const hasPhoto = typeof params.photoDataUrl === "string" && params.photoDataUrl.trim().length > 0;
+    const isAr = params.lang === AppLanguage.AR;
+    const actorId = params.studentId ?? getBrowserActorId();
+
+    const localPlan = buildDirectCognitivePlan({
+      prompt: params.prompt,
+      explicitMood: params.explicitMood,
+      memory: params.memory,
+      isArabic: isAr,
+      subject: params.subject,
+    });
+    params.onMeta?.(localPlan.meta);
+
+    if (localPlan.cheatingGuardReply) {
+      params.onChunk(localPlan.cheatingGuardReply);
+      void fetch("/api/ai/telemetry-ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-kashkool-actor": actorId },
+        body: JSON.stringify({
+          studentId: actorId,
+          subject: params.subject,
+          emotion: localPlan.meta.emotion,
+          lane: localPlan.meta.lane,
+          modelId: "kashkool-cognitive-guard",
+          providerId: "client-guard",
+          ttftMs: 12,
+          totalLatencyMs: 15,
+          cheatingAttemptFlagged: true,
+          promptInjectionFlagged: localPlan.promptInjectionFlagged,
+          promptExcerpt: params.prompt,
+          responseExcerpt: localPlan.cheatingGuardReply,
+          strategyCode: `${localPlan.meta.emotion} -> ${localPlan.meta.lane}`,
+        }),
+      }).catch(() => undefined);
+      return { text: localPlan.cheatingGuardReply, meta: localPlan.meta };
+    }
+
+    // Text requests connect directly from each user's browser to CORS-enabled AI servers first
+    // (zero shared server bottleneck). Vision or direct failures fall back to per-actor /api/ai/study-chat.
+    if (!hasPhoto) {
+      try {
+        const langHint = isAr ? "Arabic (clear Egyptian empathetic style)" : "English";
+        const contextualPrompt = [
+          `Language: ${langHint}`,
+          `User Role: ${params.role}`,
+          `Lesson / Context: ${params.subject}`,
+          `Verified 15-min Rescue Focus: ${knapsackSummary}`,
+          `System Certainty Score: ${params.report.certaintyScorePercent}%`,
+          "",
+          "Question / Request:",
+          params.prompt,
+          "",
+          "Respond warmly with numbered steps and a concise rule takeaway.",
+        ].join("\n");
+
+        const historyMessages: DirectChatMessage[] = params.history
+          .slice(1)
+          .slice(-6)
+          .map((m) => ({
+            role: m.fromUser ? "user" : "assistant",
+            content: String(m.text ?? "").slice(0, 600),
+          }));
+
+        const startedAt = Date.now();
+        const directRes = await directBrowserAi.chat({
+          messages: [...historyMessages, { role: "user", content: contextualPrompt }],
+          systemPrompt: localPlan.systemPrompt,
+          temperature: 0.55,
+          onChunk: (accumulated) => params.onChunk(accumulated),
+        });
+        const cleanFinal = sanitizeDirectOutput(directRes.text);
+        const enrichedMeta: CognitiveMeta = { ...localPlan.meta, ttftMs: directRes.ttftMs };
+        params.onMeta?.(enrichedMeta);
+        params.onChunk(cleanFinal);
+
+        // Non-blocking PII-scrubbed telemetry & adaptive memory update
+        void fetch("/api/ai/telemetry-ingest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-kashkool-actor": actorId },
+          body: JSON.stringify({
+            studentId: actorId,
+            subject: params.subject,
+            emotion: enrichedMeta.emotion,
+            lane: enrichedMeta.lane,
+            modelId: directRes.model,
+            providerId: directRes.providerId,
+            ttftMs: directRes.ttftMs,
+            totalLatencyMs: Date.now() - startedAt,
+            promptInjectionFlagged: localPlan.promptInjectionFlagged,
+            promptExcerpt: params.prompt,
+            responseExcerpt: cleanFinal,
+            strategyCode: `${enrichedMeta.emotion} -> ${enrichedMeta.lane}`,
+          }),
+        }).catch(() => undefined);
+
+        return { text: cleanFinal, meta: enrichedMeta };
+      } catch {
+        // Transparent fallback to per-actor backend multi-engine cognitive router
+      }
+    }
+
     const res = await fetch("/api/ai/study-chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-kashkool-actor": actorId,
+      },
       body: JSON.stringify({
         prompt: params.prompt,
         history: params.history,
@@ -59,6 +261,8 @@ export const AiToolkitClient = {
         knapsackSummary,
         certaintyScore: params.report.certaintyScorePercent,
         lang: params.lang,
+        explicitMood: params.explicitMood ?? null,
+        studentId: actorId,
       }),
     });
 
@@ -74,6 +278,7 @@ export const AiToolkitClient = {
     const decoder = new TextDecoder();
     let buffer = "";
     let accumulated = "";
+    let serverMeta: CognitiveMeta | undefined = localPlan.meta;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -84,23 +289,60 @@ export const AiToolkitClient = {
       for (const line of lines) {
         const clean = line.replace(/^data:\s*/, "").trim();
         if (!clean) continue;
-        const parsed = JSON.parse(clean) as { chunk?: string; error?: string; done?: boolean };
+        const parsed = JSON.parse(clean) as {
+          meta?: CognitiveMeta;
+          chunk?: string;
+          error?: string;
+          done?: boolean;
+          ttftMs?: number;
+        };
         if (parsed.error) throw new Error(parsed.error);
+        if (parsed.meta) {
+          serverMeta = parsed.meta;
+          params.onMeta?.(parsed.meta);
+        }
         if (parsed.chunk) {
           accumulated += parsed.chunk;
-          params.onChunk(accumulated);
+          const visible = sanitizeDirectOutput(accumulated, true);
+          if (visible) {
+            params.onChunk(visible);
+          }
+        }
+        if (parsed.done && typeof parsed.ttftMs === "number" && serverMeta) {
+          serverMeta = { ...serverMeta, ttftMs: parsed.ttftMs };
+          params.onMeta?.(serverMeta);
         }
       }
     }
 
+    const safeFinal = sanitizeDirectOutput(accumulated);
     if (!accumulated.trim()) {
       throw new Error("Empty response from study helper.");
     }
-    return accumulated;
+    return { text: safeFinal, meta: serverMeta };
   },
 
   async generateAdaptiveQuiz(lessonTitle: string, lang: AppLanguage): Promise<QuizQuestion[]> {
-    const data = await postJson<{
+    const langLabel = lang === AppLanguage.AR ? "Natural Egyptian Arabic (Thanaweya Amma style)" : "Clear English";
+    const prompt = [
+      `Generate 3 high-quality multiple-choice practice questions strictly focused on: "${lessonTitle}".`,
+      `Output language: ${langLabel}.`,
+      "Return ONLY valid JSON (no markdown fences or commentary) matching this exact schema:",
+      JSON.stringify({
+        questions: [
+          {
+            topicTag: "string",
+            prompt: "string",
+            formula: "ASCII/Unicode LTR math or physics expression",
+            options: ["opt1", "opt2", "opt3", "opt4"],
+            correctIndex: 0,
+            remedial: "brief calm 1-sentence explanation hint",
+          },
+        ],
+      }),
+    ].join("\n");
+
+    const data = await directJsonWithFallback<{
       questions?: Array<{
         topicTag?: string;
         prompt?: string;
@@ -109,14 +351,20 @@ export const AiToolkitClient = {
         correctIndex?: number;
         remedial?: string;
       }>;
-    }>("/api/ai/adaptive-quiz", { lessonTitle, lang });
+    }>({
+      prompt,
+      systemPrompt: "You are Kashkool's curriculum quiz author. Output valid JSON strictly following the requested schema.",
+      temperature: 0.4,
+      fallbackUrl: "/api/ai/adaptive-quiz",
+      fallbackBody: { lessonTitle, lang },
+    });
 
     const arr = data.questions ?? [];
     const parsed: QuizQuestion[] = arr
       .map((item, idx) => {
         const opts = (item.options ?? []).filter((o) => o && o.trim().length > 0).slice(0, 4);
-        const prompt = (item.prompt ?? "").trim();
-        if (!prompt || opts.length < 2) return null;
+        const qPrompt = (item.prompt ?? "").trim();
+        if (!qPrompt || opts.length < 2) return null;
         const tag = (item.topicTag ?? "").trim() || lessonTitle;
         const hint = (item.remedial ?? "").trim();
         const correctIdx = Math.min(opts.length - 1, Math.max(0, Number(item.correctIndex ?? 0)));
@@ -124,8 +372,8 @@ export const AiToolkitClient = {
           id: `ai-q-${Date.now()}-${idx}`,
           topicTagAr: tag,
           topicTagEn: tag,
-          promptAr: prompt,
-          promptEn: prompt,
+          promptAr: qPrompt,
+          promptEn: qPrompt,
           formula: (item.formula ?? "").trim() || "f(x)",
           options: opts,
           correctIndex: correctIdx,
@@ -142,6 +390,7 @@ export const AiToolkitClient = {
   },
 
   async scanPaymentReceipt(imageDataUrl: string, lang: AppLanguage): Promise<ReceiptScanResult> {
+    // Vision requires multimodal model routed securely via per-actor backend
     const data = await postJson<Partial<ReceiptScanResult>>("/api/ai/scan-receipt", {
       imageDataUrl,
       lang,
@@ -162,10 +411,28 @@ export const AiToolkitClient = {
     lessonSummary: string,
     lang: AppLanguage
   ): Promise<LessonRevisionDeck> {
-    const data = await postJson<Partial<LessonRevisionDeck>>("/api/ai/revision-deck", {
-      lessonTitle,
-      lessonSummary,
-      lang,
+    const langLabel = lang === AppLanguage.AR ? "Natural Egyptian Arabic (Thanaweya Amma)" : "Clear English";
+    const prompt = [
+      `Output strictly in ${langLabel}.`,
+      `Build a lightweight, high-retention 5-minute revision deck for:`,
+      `Lesson: "${lessonTitle}"`,
+      `Key Notes: "${lessonSummary}"`,
+      "Include 4 active-recall flashcards (front + concise back), 2-3 common Egyptian exam traps, and 1 memorable hook.",
+      "Return ONLY valid JSON matching:",
+      JSON.stringify({
+        lessonTitle: "string",
+        memoryHook: "string",
+        flashcards: [{ front: "string", back: "string" }],
+        commonTraps: ["string"],
+      }),
+    ].join("\n");
+
+    const data = await directJsonWithFallback<Partial<LessonRevisionDeck>>({
+      prompt,
+      systemPrompt: "You are Kashkool's Egyptian Thanaweya Amma revision designer. Respond only with valid JSON.",
+      temperature: 0.5,
+      fallbackUrl: "/api/ai/revision-deck",
+      fallbackBody: { lessonTitle, lessonSummary, lang },
     });
     return {
       lessonTitle: data.lessonTitle ?? lessonTitle,
@@ -204,7 +471,25 @@ ${orLine ? `- ${orLine}` : ""}
 
 Produce: headline, weeklyNarrative, cheerMessage (ready to send to the student), and 1 practical homeSupportTip.`;
 
-    const data = await postJson<Partial<ParentWeeklyDigest>>("/api/ai/parent-digest", { prompt });
+    const fullPrompt = [
+      prompt,
+      "",
+      "Return ONLY valid JSON matching:",
+      JSON.stringify({
+        headline: "string",
+        weeklyNarrative: "string",
+        cheerMessage: "string",
+        homeSupportTip: "string",
+      }),
+    ].join("\n");
+
+    const data = await directJsonWithFallback<Partial<ParentWeeklyDigest>>({
+      prompt: fullPrompt,
+      systemPrompt: "You are Kashkool's calm Egyptian parent advisor. Respond only with valid JSON.",
+      temperature: 0.5,
+      fallbackUrl: "/api/ai/parent-digest",
+      fallbackBody: { prompt },
+    });
     return {
       headline: data.headline ?? "",
       weeklyNarrative: data.weeklyNarrative ?? "",
@@ -238,7 +523,20 @@ Draft a short WhatsApp message (3-4 lines max) from Al-Nokhba Center reception d
 Context: ${statusContext}
 Keep tone respectful, calm, and Egyptian center authentic. Never expose technical terms.`;
 
-    const data = await postJson<Partial<SecretaryNoticeDraft>>("/api/ai/secretary-notice", { prompt });
+    const fullPrompt = [
+      prompt,
+      "",
+      "Return ONLY valid JSON matching:",
+      JSON.stringify({ toneTag: "string", messageText: "string" }),
+    ].join("\n");
+
+    const data = await directJsonWithFallback<Partial<SecretaryNoticeDraft>>({
+      prompt: fullPrompt,
+      systemPrompt: "You draft polite Egyptian reception desk messages. Respond only with valid JSON.",
+      temperature: 0.5,
+      fallbackUrl: "/api/ai/secretary-notice",
+      fallbackBody: { prompt },
+    });
     return {
       toneTag: data.toneTag ?? "",
       messageText: data.messageText ?? "",
@@ -270,7 +568,26 @@ ${orContext ? `- ${orContext}` : ""}
 
 Include 4 pacingSteps with minute blocks, 2 basicHomework items, 2 challengeHomework problems, and 2 assistantChecklist items.`;
 
-    const data = await postJson<Partial<TeacherLessonPlan>>("/api/ai/teacher-plan", { prompt });
+    const fullPrompt = [
+      prompt,
+      "",
+      "Return ONLY valid JSON matching:",
+      JSON.stringify({
+        topicTitle: "string",
+        pacingSteps: ["string"],
+        basicHomework: ["string"],
+        challengeHomework: ["string"],
+        assistantChecklist: ["string"],
+      }),
+    ].join("\n");
+
+    const data = await directJsonWithFallback<Partial<TeacherLessonPlan>>({
+      prompt: fullPrompt,
+      systemPrompt: "You are Kashkool's instructional pacing planner. Respond only with valid JSON.",
+      temperature: 0.5,
+      fallbackUrl: "/api/ai/teacher-plan",
+      fallbackBody: { prompt },
+    });
     return {
       topicTitle: data.topicTitle ?? groupTitle,
       pacingSteps: Array.isArray(data.pacingSteps) ? data.pacingSteps : [],
@@ -302,7 +619,27 @@ Exact Verified Operations Research Metrics (DO NOT alter these numbers):
 
 Summarize the single best decision and 2-3 immediate trust-building actions for this user role without using technical jargon.`;
 
-    const data = await postJson<Partial<AiOperationalBriefing>>("/api/ai/operational-briefing", { prompt });
+    const fullPrompt = [
+      prompt,
+      "",
+      "Return ONLY valid JSON matching:",
+      JSON.stringify({
+        headline: "string",
+        confidenceStatement: "string",
+        topDecision: "string",
+        nextActionSteps: ["string"],
+        trustGuarantee: "string",
+      }),
+    ].join("\n");
+
+    const data = await directJsonWithFallback<Partial<AiOperationalBriefing>>({
+      prompt: fullPrompt,
+      systemPrompt:
+        "You are Kashkool's Operations Advisor. Never alter the exact numbers provided. Respond only with valid JSON.",
+      temperature: 0.4,
+      fallbackUrl: "/api/ai/operational-briefing",
+      fallbackBody: { prompt },
+    });
     return {
       headline: data.headline ?? "",
       confidenceStatement: data.confidenceStatement ?? "",
@@ -340,7 +677,23 @@ Evaluate STUDENT academic & commitment performance based ONLY on these verified 
 
 Provide an encouraging, transparent, evidence-backed evaluation with concrete strengths, constructive growth areas, and immediate next steps.`;
 
-    const raw = await postJson<{
+    const fullPrompt = [
+      prompt,
+      "",
+      "Return ONLY valid JSON matching:",
+      JSON.stringify({
+        overallScore: 88,
+        trustBadge: "string",
+        analyticalSummary: "string",
+        instantFeedback: "string",
+        strengths: ["string"],
+        improvementAreas: ["string"],
+        nextActionPlan: ["string"],
+        trustVerificationNote: "string",
+      }),
+    ].join("\n");
+
+    const raw = await directJsonWithFallback<{
       overallScore?: number;
       trustBadge?: string;
       analyticalSummary?: string;
@@ -349,7 +702,14 @@ Provide an encouraging, transparent, evidence-backed evaluation with concrete st
       improvementAreas?: string[];
       nextActionPlan?: string[];
       trustVerificationNote?: string;
-    }>("/api/ai/evaluate", { prompt });
+    }>({
+      prompt: fullPrompt,
+      systemPrompt:
+        "You are Kashkool's Academic Evaluation & Trust Specialist in Egypt. Never use buzzwords like AI, LLM, bot, API, or pricing jargon. Always cite exact verified figures provided in the prompt. Respond only with valid JSON.",
+      temperature: 0.4,
+      fallbackUrl: "/api/ai/evaluate",
+      fallbackBody: { prompt },
+    });
 
     return {
       id: `eval-student-${student.id}`,
@@ -394,7 +754,23 @@ Evaluate TEACHER & EDUCATIONAL CENTER performance based ONLY on these verified K
 
 Provide an analytical, transparent evaluation highlighting instructional impact, operational discipline, hall management, and trust-building next steps.`;
 
-    const raw = await postJson<{
+    const fullPrompt = [
+      prompt,
+      "",
+      "Return ONLY valid JSON matching:",
+      JSON.stringify({
+        overallScore: 88,
+        trustBadge: "string",
+        analyticalSummary: "string",
+        instantFeedback: "string",
+        strengths: ["string"],
+        improvementAreas: ["string"],
+        nextActionPlan: ["string"],
+        trustVerificationNote: "string",
+      }),
+    ].join("\n");
+
+    const raw = await directJsonWithFallback<{
       overallScore?: number;
       trustBadge?: string;
       analyticalSummary?: string;
@@ -403,7 +779,14 @@ Provide an analytical, transparent evaluation highlighting instructional impact,
       improvementAreas?: string[];
       nextActionPlan?: string[];
       trustVerificationNote?: string;
-    }>("/api/ai/evaluate", { prompt });
+    }>({
+      prompt: fullPrompt,
+      systemPrompt:
+        "You are Kashkool's Academic Evaluation & Trust Specialist in Egypt. Never use buzzwords like AI, LLM, bot, API, or pricing jargon. Always cite exact verified figures provided in the prompt. Respond only with valid JSON.",
+      temperature: 0.4,
+      fallbackUrl: "/api/ai/evaluate",
+      fallbackBody: { prompt },
+    });
 
     return {
       id: "eval-teacher-teacher-center",
@@ -421,5 +804,101 @@ Provide an analytical, transparent evaluation highlighting instructional impact,
       trustVerificationNote: (raw.trustVerificationNote ?? "").trim(),
       evaluatedAtMillis: Date.now(),
     };
+  },
+
+  async explainMistake(params: {
+    topicTag: string;
+    questionPrompt: string;
+    wrongAnswer: string;
+    correctAnswer: string;
+    lang: AppLanguage;
+  }): Promise<{ whyMistakeHappens: string; stepByStepFix: string[]; goldenRule: string }> {
+    const langLabel = params.lang === AppLanguage.AR ? "Clear Egyptian Arabic (Thanaweya Amma)" : "Clear English";
+    const prompt = [
+      `Output strictly in ${langLabel}.`,
+      `Topic: ${params.topicTag}`,
+      `Question: ${params.questionPrompt}`,
+      `Student's Wrong Choice: ${params.wrongAnswer}`,
+      `Correct Answer: ${params.correctAnswer}`,
+      "Return ONLY valid JSON matching:",
+      JSON.stringify({
+        whyMistakeHappens: "1-2 sentences explaining the trap",
+        stepByStepFix: ["step 1", "step 2", "step 3"],
+        goldenRule: "1 crisp rule to remember in exams",
+      }),
+    ].join("\n");
+
+    const data = await directJsonWithFallback<{
+      whyMistakeHappens?: string;
+      stepByStepFix?: string[];
+      goldenRule?: string;
+    }>({
+      prompt,
+      systemPrompt: "You are Kashkool's Mistake Bank Tutor in Egypt. Respond only with valid JSON.",
+      temperature: 0.4,
+      fallbackUrl: "/api/ai/mistake-explain",
+      fallbackBody: params,
+    });
+    return {
+      whyMistakeHappens: String(data.whyMistakeHappens ?? "").trim(),
+      stepByStepFix: Array.isArray(data.stepByStepFix) ? data.stepByStepFix : [],
+      goldenRule: String(data.goldenRule ?? "").trim(),
+    };
+  },
+
+  async generateExamDraft(params: {
+    subject: string;
+    topic: string;
+    questionCount?: number;
+    lang: AppLanguage;
+  }): Promise<{
+    titleAr: string;
+    titleEn: string;
+    questions: Array<{
+      topicTagAr: string;
+      topicTagEn: string;
+      promptAr: string;
+      promptEn: string;
+      formula?: string;
+      options: string[];
+      correctIndex: number;
+      points: number;
+      remedialAr: string;
+      remedialEn: string;
+    }>;
+  }> {
+    const langLabel = params.lang === AppLanguage.AR ? "Natural Egyptian Arabic (Thanaweya Amma)" : "Clear English";
+    const count = Math.min(8, Math.max(2, Number(params.questionCount) || 4));
+    const prompt = [
+      `Output strictly in ${langLabel}.`,
+      `Create ${count} high-precision Egyptian Thanaweya Amma exam questions for Subject "${params.subject}" on Topic "${params.topic}".`,
+      "Return ONLY valid JSON matching:",
+      JSON.stringify({
+        titleAr: "string",
+        titleEn: "string",
+        questions: [
+          {
+            topicTagAr: "string",
+            topicTagEn: "string",
+            promptAr: "string",
+            promptEn: "string",
+            formula: "ASCII math/physics expression",
+            options: ["opt1", "opt2", "opt3", "opt4"],
+            correctIndex: 0,
+            points: 2,
+            remedialAr: "brief explanation in Arabic",
+            remedialEn: "brief explanation in English",
+          },
+        ],
+      }),
+    ].join("\n");
+
+    return directJsonWithFallback({
+      prompt,
+      systemPrompt: "You are Kashkool's official Thanaweya Amma exam author. Output ONLY valid JSON.",
+      temperature: 0.4,
+      fallbackUrl: "/api/ai/exam-generator",
+      fallbackBody: params,
+    });
   },
 };

@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   AiOperationalBriefing,
+  AnnouncementEntity,
   AppLanguage,
   AssistantMessage,
   AsyncUiState,
@@ -12,13 +13,20 @@ import {
   AuthUiState,
   AvailabilityStatus,
   CenterPlanTier,
+  CognitiveMeta,
   CompressedReceiptResult,
   CourseUnit,
+  EmotionalPulse,
   EvaluationTargetType,
   GroupEntity,
+  HomeworkAssignmentEntity,
+  HomeworkSubmissionEntity,
   LedgerEntryEntity,
   LedgerKind,
   LessonRevisionDeck,
+  MakeupSessionEntity,
+  MistakeBankEntry,
+  ParentAlertEntity,
   ParentWeeklyDigest,
   PaymentChannelEntity,
   PaymentSubmissionEntity,
@@ -34,16 +42,25 @@ import {
   ScanFeedback,
   SecretaryNoticeUiState,
   ShiftReconciliation,
+  StudentAiMemory,
   StudentEntity,
   SubmissionStatus,
+  SupportTicketEntity,
   SystemOperatingReport,
   TeacherLessonPlan,
   UserRole,
 } from "../types/kashkool";
 import {
+  initialAnnouncements,
   initialAttendance,
+  initialHomeworkAssignments,
+  initialHomeworkSubmissions,
   initialLedgerEntries,
+  initialMakeupSessions,
+  initialMistakeBank,
+  initialParentAlerts,
   initialResources,
+  initialSupportTickets,
   seedChannels,
   seedGroups,
   seedStudents,
@@ -77,6 +94,7 @@ interface PersistedData {
   signedIn: boolean;
   activeRole: UserRole;
   userLabel: string;
+  linkedParentStudentId: string;
   lowDataMode: boolean;
   streakShieldActive: boolean;
   activeCenterPlanId: string;
@@ -92,6 +110,13 @@ interface PersistedData {
   submissions: PaymentSubmissionEntity[];
   resources: ResourceItem[];
   evaluations: PerformanceEvaluationEntity[];
+  makeupSessions: MakeupSessionEntity[];
+  homeworkAssignments: HomeworkAssignmentEntity[];
+  homeworkSubmissions: HomeworkSubmissionEntity[];
+  mistakeBank: MistakeBankEntry[];
+  announcements: AnnouncementEntity[];
+  supportTickets: SupportTicketEntity[];
+  parentAlerts: ParentAlertEntity[];
 }
 
 function createInitialPersisted(): PersistedData {
@@ -101,6 +126,7 @@ function createInitialPersisted(): PersistedData {
     signedIn: false,
     activeRole: UserRole.STUDENT,
     userLabel: "+201012345678",
+    linkedParentStudentId: "stu-1",
     lowDataMode: true,
     streakShieldActive: false,
     activeCenterPlanId: "plan-pro",
@@ -116,6 +142,13 @@ function createInitialPersisted(): PersistedData {
     submissions: [],
     resources: initialResources(now),
     evaluations: [],
+    makeupSessions: initialMakeupSessions(now),
+    homeworkAssignments: initialHomeworkAssignments(now),
+    homeworkSubmissions: initialHomeworkSubmissions(now),
+    mistakeBank: initialMistakeBank(now),
+    announcements: initialAnnouncements(now),
+    supportTickets: initialSupportTickets(now),
+    parentAlerts: initialParentAlerts(now),
   };
 }
 
@@ -128,6 +161,7 @@ function loadPersisted(): PersistedData {
     return {
       ...fallback,
       ...parsed,
+      linkedParentStudentId: parsed.linkedParentStudentId || fallback.linkedParentStudentId,
       groups: Array.isArray(parsed.groups) && parsed.groups.length > 0 ? parsed.groups : fallback.groups,
       students: Array.isArray(parsed.students) && parsed.students.length > 0 ? parsed.students : fallback.students,
       channels: Array.isArray(parsed.channels) && parsed.channels.length > 0 ? parsed.channels : fallback.channels,
@@ -138,6 +172,17 @@ function loadPersisted(): PersistedData {
       evaluations: Array.isArray(parsed.evaluations) ? parsed.evaluations : [],
       rescueIds: Array.isArray(parsed.rescueIds) ? parsed.rescueIds : fallback.rescueIds,
       completedCourseIds: Array.isArray(parsed.completedCourseIds) ? parsed.completedCourseIds : [],
+      makeupSessions: Array.isArray(parsed.makeupSessions) ? parsed.makeupSessions : fallback.makeupSessions,
+      homeworkAssignments: Array.isArray(parsed.homeworkAssignments)
+        ? parsed.homeworkAssignments
+        : fallback.homeworkAssignments,
+      homeworkSubmissions: Array.isArray(parsed.homeworkSubmissions)
+        ? parsed.homeworkSubmissions
+        : fallback.homeworkSubmissions,
+      mistakeBank: Array.isArray(parsed.mistakeBank) ? parsed.mistakeBank : fallback.mistakeBank,
+      announcements: Array.isArray(parsed.announcements) ? parsed.announcements : fallback.announcements,
+      supportTickets: Array.isArray(parsed.supportTickets) ? parsed.supportTickets : fallback.supportTickets,
+      parentAlerts: Array.isArray(parsed.parentAlerts) ? parsed.parentAlerts : fallback.parentAlerts,
     };
   } catch {
     return createInitialPersisted();
@@ -192,6 +237,14 @@ export interface KashkoolContextValue {
   assistantMessages: AssistantMessage[];
   assistantBusy: boolean;
   assistantError: string | null;
+  selectedMood: EmotionalPulse | null;
+  setSelectedMood: (mood: EmotionalPulse | null) => void;
+  studentMemory: StudentAiMemory;
+  memoryBusy: boolean;
+  updateStudentMemoryPrefs: (
+    patch: Partial<Pick<StudentAiMemory, "learningPace" | "preferredStyle" | "tonePreference" | "academicTrack" | "weakTopics">>
+  ) => Promise<void>;
+  resetStudentMemoryPrefs: () => Promise<void>;
   activeLectureId: string | null;
   activeLectureTitle: string | null;
   adaptiveQuizQuestions: QuizQuestion[] | null;
@@ -218,6 +271,17 @@ export interface KashkoolContextValue {
   secretaryNoticeState: SecretaryNoticeUiState;
   teacherPlanState: AsyncUiState<TeacherLessonPlan>;
 
+  // Stage 1-5 Additions
+  isOnline: boolean;
+  linkedParentStudent: StudentEntity | undefined;
+  makeupSessions: MakeupSessionEntity[];
+  homeworkAssignments: HomeworkAssignmentEntity[];
+  homeworkSubmissions: HomeworkSubmissionEntity[];
+  mistakeBank: MistakeBankEntry[];
+  announcements: AnnouncementEntity[];
+  supportTickets: SupportTicketEntity[];
+  parentAlerts: ParentAlertEntity[];
+
   // Actions
   tr: (key: string) => string;
   showSnackbar: (msg: string) => void;
@@ -234,7 +298,7 @@ export interface KashkoolContextValue {
   toggleLowDataMode: () => void;
   toggleStreakShield: () => void;
   completeRescueItem: (questionId: string) => void;
-  recordQuizOutcome: (questionId: string, correct: boolean) => void;
+  recordQuizOutcome: (questionId: string, correct: boolean, wrongAnswer?: string) => void;
   triggerParentReassurance: () => void;
   buildEncouragementMessage: () => string;
   buildParentReportShareText: () => string;
@@ -266,7 +330,12 @@ export interface KashkoolContextValue {
   recordCashDeskEntry: (student: StudentEntity, kind: LedgerKind, amountEgpText: string, note: string) => void;
   voidLedgerEntry: (entryId: string, reason: string) => void;
   executeDailySettlement: (netPayoutPiasters: number, attendedCount: number) => void;
-  createGroup: (name: string, schedule: string, capacityText: string, priceEgpText: string) => void;
+  createGroup: (
+    name: string,
+    schedule: string,
+    capacityText: string,
+    priceEgpText: string
+  ) => { ok: boolean; error?: string };
   submitPaymentReceipt: (channel: PaymentChannelEntity, amountEgpText: string, senderRef: string) => void;
   approveSubmission: (submission: PaymentSubmissionEntity) => void;
   rejectSubmission: (submission: PaymentSubmissionEntity, reason: string) => void;
@@ -286,6 +355,36 @@ export interface KashkoolContextValue {
   dismissSecretaryNotice: () => void;
   generateTeacherLessonPlan: (group: GroupEntity) => Promise<void>;
   buildThermalReceipt: () => string;
+
+  // Stage 1-5 Actions
+  issueMakeupSession: (student: StudentEntity, toGroupId: string, scheduledDateLabel: string, note: string) => void;
+  redeemMakeupSession: (makeupId: string) => void;
+  createHomeworkAssignment: (groupId: string, title: string, description: string, dueDate: string, maxScore: number) => void;
+  submitHomework: (assignmentId: string, notes: string, attachmentDataUrl?: string | null) => void;
+  gradeHomework: (submissionId: string, score: number, feedback: string) => void;
+  addMistakeEntries: (
+    sourceType: "quiz" | "exam" | "homework",
+    mistakes: Array<{
+      topicTagAr: string;
+      topicTagEn: string;
+      questionPromptAr: string;
+      questionPromptEn: string;
+      wrongAnswer: string;
+      correctAnswer: string;
+      remedialAr: string;
+      remedialEn: string;
+    }>
+  ) => void;
+  toggleMistakeMastered: (mistakeId: string) => void;
+  explainMistakeWithAi: (mistakeId: string) => Promise<void>;
+  createAnnouncement: (groupId: string | null, title: string, body: string, pinned: boolean) => void;
+  markAnnouncementRead: (announcementId: string) => void;
+  createSupportTicket: (subject: string, message: string) => void;
+  replySupportTicket: (ticketId: string, replyText: string) => void;
+  linkChildByInviteCode: (inviteCode: string) => { ok: boolean; error?: string };
+  markParentAlertRead: (alertId: string) => void;
+  pushParentAlert: (alert: Omit<ParentAlertEntity, "id" | "isRead" | "createdAtMillis">) => void;
+  exportFinancialCsv: () => void;
 }
 
 const KashkoolContext = createContext<KashkoolContextValue | null>(null);
@@ -339,6 +438,32 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [parentDigestState, setParentDigestState] = useState<AsyncUiState<ParentWeeklyDigest>>({ status: "idle" });
   const [secretaryNoticeState, setSecretaryNoticeState] = useState<SecretaryNoticeUiState>({ status: "idle" });
   const [teacherPlanState, setTeacherPlanState] = useState<AsyncUiState<TeacherLessonPlan>>({ status: "idle" });
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
+  const [selectedMood, setSelectedMood] = useState<EmotionalPulse | null>(null);
+  const [memoryBusy, setMemoryBusy] = useState(false);
+  const [studentMemory, setStudentMemory] = useState<StudentAiMemory>(() => {
+    const fallback: StudentAiMemory = {
+      studentId: "stu-1",
+      tenantId: "demo-centre",
+      learningPace: "balanced",
+      preferredStyle: "step_by_step",
+      tonePreference: "warm_egyptian",
+      academicTrack: "الثانوية العامة (رياضيات وفيزياء)",
+      weakTopics: ["تطبيقات القيم العظمى والصغرى", "قانون كيرشوف الثاني"],
+      emotionalTriggers: [],
+      studyHabits: { preferredSessionMinutes: 15, prefersHintsFirst: true, needsFrequentCheckIns: true },
+      lastEmotion: "CALM",
+      totalSessionsCount: 1,
+      updatedAtMillis: Date.now(),
+    };
+    try {
+      const raw = localStorage.getItem("kashkool_student_memory_v1");
+      if (raw) return { ...fallback, ...(JSON.parse(raw) as Partial<StudentAiMemory>) };
+    } catch {
+      // Ignore invalid local storage
+    }
+    return fallback;
+  });
 
   // Sync HTML dir/lang with current language
   useEffect(() => {
@@ -521,9 +646,23 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       persisted.attendance.filter((a) => a.syncStatus === "pending").length +
       persisted.ledger.filter((l) => l.syncStatus === "pending").length +
       persisted.submissions.filter((s) => s.syncStatus === "pending").length +
-      persisted.resources.filter((r) => r.syncStatus === "pending").length
+      persisted.resources.filter((r) => r.syncStatus === "pending").length +
+      persisted.homeworkSubmissions.filter((h) => h.syncStatus === "pending").length +
+      persisted.mistakeBank.filter((m) => m.syncStatus === "pending").length +
+      persisted.makeupSessions.filter((m) => m.syncStatus === "pending").length +
+      persisted.supportTickets.filter((tk) => tk.syncStatus === "pending").length
     );
-  }, [persisted.groups, persisted.attendance, persisted.ledger, persisted.submissions, persisted.resources]);
+  }, [
+    persisted.groups,
+    persisted.attendance,
+    persisted.ledger,
+    persisted.submissions,
+    persisted.resources,
+    persisted.homeworkSubmissions,
+    persisted.mistakeBank,
+    persisted.makeupSessions,
+    persisted.supportTickets,
+  ]);
 
   const qrToken = useMemo(() => qrEngine.tokenAt(qrEpochSeconds), [qrEpochSeconds]);
   const qrSecondsRemaining = useMemo(() => qrEngine.secondsRemaining(qrEpochSeconds), [qrEpochSeconds]);
@@ -540,12 +679,42 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return persisted.students.find((s) => s.id === "stu-1") ?? persisted.students[0];
   }, [persisted.students, persisted.userLabel]);
 
+  const linkedParentStudent = useMemo(() => {
+    return (
+      persisted.students.find((s) => s.id === persisted.linkedParentStudentId) ??
+      activeStudent ??
+      persisted.students[0]
+    );
+  }, [persisted.students, persisted.linkedParentStudentId, activeStudent]);
+
   const activeStudentQrToken = useMemo(
     () => (activeStudent ? qrEngine.studentTokenAt(activeStudent.id, qrEpochSeconds) : ""),
     [activeStudent, qrEpochSeconds]
   );
 
   const activeStudentCardCode = activeStudent?.qrActivationCode ?? "";
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("kashkool_student_memory_v1", JSON.stringify(studentMemory));
+    } catch {
+      // Ignore quota errors
+    }
+  }, [studentMemory]);
+
+  useEffect(() => {
+    const sid = activeStudent?.id;
+    if (!sid || !isOnline) return;
+    let cancelled = false;
+    void AiToolkitClient.fetchStudentMemory(sid)
+      .then((mem) => {
+        if (!cancelled) setStudentMemory(mem);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeStudent?.id, isOnline]);
   const activeStudentCardPayload = useMemo(
     () =>
       activeStudent && activeStudentCardCode
@@ -704,6 +873,10 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ledger: persisted.ledger,
       submissions: persisted.submissions,
       channels: persisted.channels,
+      homeworkSubmissions: persisted.homeworkSubmissions,
+      mistakeBank: persisted.mistakeBank,
+      makeupSessions: persisted.makeupSessions,
+      supportTickets: persisted.supportTickets,
     }).then((result) => {
       if (!result.error) {
         setPersisted((p) => ({
@@ -713,6 +886,10 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           ledger: p.ledger.map((l) => ({ ...l, syncStatus: "synced" })),
           submissions: p.submissions.map((s) => ({ ...s, syncStatus: "synced" })),
           resources: p.resources.map((r) => ({ ...r, syncStatus: "synced" })),
+          homeworkSubmissions: p.homeworkSubmissions.map((h) => ({ ...h, syncStatus: "synced" })),
+          mistakeBank: p.mistakeBank.map((m) => ({ ...m, syncStatus: "synced" })),
+          makeupSessions: p.makeupSessions.map((m) => ({ ...m, syncStatus: "synced" })),
+          supportTickets: p.supportTickets.map((tk) => ({ ...tk, syncStatus: "synced" })),
         }));
       }
       setSyncBusy(false);
@@ -726,7 +903,31 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     persisted.ledger,
     persisted.submissions,
     persisted.channels,
+    persisted.homeworkSubmissions,
+    persisted.mistakeBank,
+    persisted.makeupSessions,
+    persisted.supportTickets,
   ]);
+
+  // Network online/offline listener with automatic reconnect sync
+  useEffect(() => {
+    const onOnline = () => {
+      setIsOnline(true);
+      if (pendingSyncCount > 0) {
+        syncNow();
+      }
+      setSnackbarMessage(t("offline_banner_reconnected", persisted.language));
+    };
+    const onOffline = () => {
+      setIsOnline(false);
+    };
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [pendingSyncCount, persisted.language, syncNow]);
 
   const toggleLowDataMode = useCallback(() => {
     setPersisted((p) => ({ ...p, lowDataMode: !p.lowDataMode }));
@@ -743,14 +944,84 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }));
   }, []);
 
-  const recordQuizOutcome = useCallback((questionId: string, correct: boolean) => {
-    setPersisted((p) => {
-      const next = new Set(p.rescueIds);
-      if (correct) next.delete(questionId);
-      else next.add(questionId);
-      return { ...p, rescueIds: Array.from(next) };
-    });
-  }, []);
+  const addMistakeEntries = useCallback(
+    (
+      sourceType: "quiz" | "exam" | "homework",
+      mistakes: Array<{
+        topicTagAr: string;
+        topicTagEn: string;
+        questionPromptAr: string;
+        questionPromptEn: string;
+        wrongAnswer: string;
+        correctAnswer: string;
+        remedialAr: string;
+        remedialEn: string;
+      }>
+    ) => {
+      const targetStudentId = activeStudent?.id ?? "stu-1";
+      const now = Date.now();
+      setPersisted((p) => {
+        const nextBank = [...p.mistakeBank];
+        for (const m of mistakes) {
+          const exists = nextBank.some(
+            (x) =>
+              x.studentId === targetStudentId &&
+              x.questionPromptAr === m.questionPromptAr &&
+              !x.mastered
+          );
+          if (!exists) {
+            nextBank.unshift({
+              id: `mis-${now}-${crypto.randomUUID().slice(0, 6)}`,
+              studentId: targetStudentId,
+              sourceType,
+              topicTagAr: m.topicTagAr,
+              topicTagEn: m.topicTagEn,
+              questionPromptAr: m.questionPromptAr,
+              questionPromptEn: m.questionPromptEn,
+              wrongAnswer: m.wrongAnswer,
+              correctAnswer: m.correctAnswer,
+              remedialAr: m.remedialAr,
+              remedialEn: m.remedialEn,
+              aiBreakdown: null,
+              mastered: false,
+              createdAtMillis: now,
+              syncStatus: "pending",
+            });
+          }
+        }
+        return { ...p, mistakeBank: nextBank };
+      });
+    },
+    [activeStudent?.id]
+  );
+
+  const recordQuizOutcome = useCallback(
+    (questionId: string, correct: boolean, wrongAnswer?: string) => {
+      const pool = [...(adaptiveQuizQuestions ?? []), ...quizCatalog];
+      const q = pool.find((item) => item.id === questionId);
+      setPersisted((p) => {
+        const next = new Set(p.rescueIds);
+        if (correct) next.delete(questionId);
+        else next.add(questionId);
+        return { ...p, rescueIds: Array.from(next) };
+      });
+      if (!correct && q) {
+        addMistakeEntries("quiz", [
+          {
+            topicTagAr: q.topicTagAr,
+            topicTagEn: q.topicTagEn,
+            questionPromptAr: q.promptAr,
+            questionPromptEn: q.promptEn,
+            wrongAnswer: wrongAnswer ?? "—",
+            correctAnswer: q.options[q.correctIndex] ?? "",
+            remedialAr: q.remedialAr,
+            remedialEn: q.remedialEn,
+          },
+        ]);
+      }
+    },
+    [adaptiveQuizQuestions, addMistakeEntries]
+  );
 
   const triggerParentReassurance = useCallback(() => {
     setReassurancePulseAtMillis(Date.now());
@@ -758,18 +1029,22 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [persisted.language]);
 
   const buildEncouragementMessage = useCallback(
-    () => KashkoolMessageBuilders.buildEncouragementMessage(persisted.students[0], persisted.language),
-    [persisted.students, persisted.language]
+    () =>
+      KashkoolMessageBuilders.buildEncouragementMessage(
+        linkedParentStudent ?? persisted.students[0],
+        persisted.language
+      ),
+    [linkedParentStudent, persisted.students, persisted.language]
   );
 
   const buildParentReportShareText = useCallback(
     () =>
       KashkoolMessageBuilders.buildParentReportShareText(
-        persisted.students[0],
+        linkedParentStudent ?? persisted.students[0],
         persisted.attendance,
         persisted.language
       ),
-    [persisted.students, persisted.attendance, persisted.language]
+    [linkedParentStudent, persisted.students, persisted.attendance, persisted.language]
   );
 
   const notifyMessageCopied = useCallback(() => {
@@ -778,8 +1053,43 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const toggleRushMode = useCallback(() => setRushModeEnabled((v) => !v), []);
 
+  const pushParentAlert = useCallback(
+    (alert: Omit<ParentAlertEntity, "id" | "isRead" | "createdAtMillis">) => {
+      const item: ParentAlertEntity = {
+        ...alert,
+        id: `pal-${Date.now()}-${crypto.randomUUID().slice(0, 5)}`,
+        isRead: false,
+        createdAtMillis: Date.now(),
+      };
+      setPersisted((p) => ({ ...p, parentAlerts: [item, ...p.parentAlerts].slice(0, 40) }));
+    },
+    []
+  );
+
   const checkInStudent = useCallback(
     (student: StudentEntity) => {
+      const todayStart = startOfDayMillis(Date.now());
+      const alreadyCheckedIn = persisted.attendance.some(
+        (a) =>
+          a.studentId === student.id &&
+          a.sessionId === SESSION_ID &&
+          a.timestampMillis >= todayStart &&
+          a.feedbackStatus !== "blocked"
+      );
+      const name = persisted.language === AppLanguage.AR ? student.nameAr : student.nameEn;
+
+      if (alreadyCheckedIn) {
+        setLastScanFeedback({
+          studentName: name,
+          status: "already",
+          detail: t("qr_already_checked_in", persisted.language),
+          alreadyCheckedIn: true,
+          timestampMillis: Date.now(),
+        });
+        setSnackbarMessage(`${name} · ${t("qr_already_checked_in", persisted.language)}`);
+        return;
+      }
+
       const status: "valid" | "due" | "blocked" = student.isBlocked
         ? "blocked"
         : student.dueBalancePiasters > 0
@@ -796,14 +1106,32 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         timestampMillis: Date.now(),
         syncStatus: "pending",
       };
+      const alert: ParentAlertEntity = {
+        id: `pal-${Date.now()}-${crypto.randomUUID().slice(0, 5)}`,
+        studentId: student.id,
+        kind: status === "due" ? "due" : "arrival",
+        titleAr: status === "due" ? "حضور مع تذكير لطيف" : "تأكيد حضور الحصة",
+        titleEn: status === "due" ? "Checked In (Balance Note)" : "Session Check-In Confirmed",
+        bodyAr:
+          status === "blocked"
+            ? `يرجى مراجعة السكرتارية بخصوص حالة حساب ${student.nameAr}.`
+            : `تم تسجيل حضور ${student.nameAr} في الحصة الساعة ${new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}.`,
+        bodyEn:
+          status === "blocked"
+            ? `Please contact center desk regarding ${student.nameEn}'s account status.`
+            : `${student.nameEn} checked into session at ${new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}.`,
+        isRead: false,
+        createdAtMillis: Date.now(),
+      };
+
       setPersisted((p) => ({
         ...p,
         attendance: [rec, ...p.attendance],
+        parentAlerts: [alert, ...p.parentAlerts].slice(0, 40),
         students: student.isBlocked
           ? p.students
           : p.students.map((s) => (s.id === student.id ? { ...s, streakDays: s.streakDays + 1 } : s)),
       }));
-      const name = persisted.language === AppLanguage.AR ? student.nameAr : student.nameEn;
       setLastScanFeedback({
         studentName: name,
         status,
@@ -812,7 +1140,7 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         timestampMillis: Date.now(),
       });
     },
-    [persisted.language]
+    [persisted.language, persisted.attendance]
   );
 
   const discreetAllowWithParentNotice = useCallback(
@@ -1372,18 +1700,38 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 
   const createGroup = useCallback(
-    (name: string, schedule: string, capacityText: string, priceEgpText: string) => {
-      if (!name.trim()) return;
+    (
+      name: string,
+      schedule: string,
+      capacityText: string,
+      priceEgpText: string
+    ): { ok: boolean; error?: string } => {
+      const cleanName = name.trim();
+      const cleanSchedule = schedule.trim();
+      if (!cleanName || !cleanSchedule) {
+        return { ok: false, error: t("validation_required", persisted.language) };
+      }
+      const normalizedNew = cleanSchedule.toLowerCase().replace(/\s+/g, " ");
+      const conflict = persisted.groups.find(
+        (g) =>
+          g.scheduleAr.toLowerCase().replace(/\s+/g, " ") === normalizedNew ||
+          g.scheduleEn.toLowerCase().replace(/\s+/g, " ") === normalizedNew
+      );
+      if (conflict) {
+        const msg = t("schedule_conflict_error", persisted.language);
+        setSnackbarMessage(msg);
+        return { ok: false, error: msg };
+      }
       const capacity = Math.max(1, Number.parseInt(capacityText.trim(), 10) || 40);
       const pricePiasters = EgyptValidators.egpStringToPiasters(priceEgpText) ?? 8000;
       const newGroup: GroupEntity = {
         id: `grp-${Date.now()}`,
-        nameAr: name.trim(),
-        nameEn: name.trim(),
+        nameAr: cleanName,
+        nameEn: cleanName,
         subjectAr: "الثانوية العامة",
         subjectEn: "High School",
-        scheduleAr: schedule.trim() || "السبت والثلاثاء 4 م",
-        scheduleEn: schedule.trim() || "Sat & Tue 4:00 PM",
+        scheduleAr: cleanSchedule,
+        scheduleEn: cleanSchedule,
         enrolled: 0,
         capacity,
         pricePerSessionPiasters: pricePiasters,
@@ -1391,8 +1739,9 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         syncStatus: "pending",
       };
       setPersisted((p) => ({ ...p, groups: [...p.groups, newGroup] }));
+      return { ok: true };
     },
-    []
+    [persisted.groups, persisted.language]
   );
 
   const submitPaymentReceipt = useCallback(
@@ -1400,11 +1749,15 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const piasters = EgyptValidators.egpStringToPiasters(amountEgpText);
       if (!piasters || !senderRef.trim()) return;
       const lang = persisted.language;
+      const targetStudent =
+        (persisted.activeRole === UserRole.PARENT ? linkedParentStudent : activeStudent) ??
+        persisted.students[0];
+      if (!targetStudent) return;
       const sub: PaymentSubmissionEntity = {
         id: `sub-${crypto.randomUUID()}`,
-        studentId: "stu-1",
-        studentNameAr: "أحمد محمد علي",
-        studentNameEn: "Ahmed Mohamed Ali",
+        studentId: targetStudent.id,
+        studentNameAr: targetStudent.nameAr,
+        studentNameEn: targetStudent.nameEn,
         channelId: channel.id,
         channelName: lang === AppLanguage.AR ? channel.nameAr : channel.nameEn,
         amountPiasters: piasters,
@@ -1419,7 +1772,7 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setReceiptScanState({ status: "idle" });
       setSnackbarMessage(lang === AppLanguage.AR ? "تم إرسال الإيصال للمراجعة" : "Receipt submitted");
     },
-    [persisted.language, compressedReceipt]
+    [persisted.language, persisted.activeRole, persisted.students, activeStudent, linkedParentStudent, compressedReceipt]
   );
 
   const approveSubmission = useCallback(
@@ -1522,6 +1875,7 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const markActiveLectureCompleted = useCallback(() => {
     if (!activeLectureId) return;
+    const targetId = activeStudent?.id ?? "stu-1";
     setPersisted((p) => {
       const exists = p.completedCourseIds.includes(activeLectureId);
       if (exists) return p;
@@ -1529,12 +1883,12 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         ...p,
         completedCourseIds: [...p.completedCourseIds, activeLectureId],
         students: p.students.map((s) =>
-          s.id === "stu-1" ? { ...s, masteryPercent: Math.min(100, s.masteryPercent + 3) } : s
+          s.id === targetId ? { ...s, masteryPercent: Math.min(100, s.masteryPercent + 3) } : s
         ),
       };
     });
     setSnackbarMessage(t("lesson_completed_badge", persisted.language));
-  }, [activeLectureId, persisted.language]);
+  }, [activeLectureId, activeStudent?.id, persisted.language]);
 
   const generateAdaptiveQuiz = useCallback(
     async (lessonTitle: string) => {
@@ -1559,6 +1913,50 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setAdaptiveQuizError(null);
   }, []);
 
+  const updateStudentMemoryPrefs = useCallback(
+    async (
+      patch: Partial<
+        Pick<StudentAiMemory, "learningPace" | "preferredStyle" | "tonePreference" | "academicTrack" | "weakTopics">
+      >
+    ) => {
+      const sid = activeStudent?.id ?? "stu-1";
+      setMemoryBusy(true);
+      setStudentMemory((prev) => ({ ...prev, ...patch, studentId: sid, updatedAtMillis: Date.now() }));
+      try {
+        const updated = await AiToolkitClient.updateStudentMemory(sid, patch);
+        setStudentMemory(updated);
+      } catch {
+        // Offline resilient local cache already applied
+      } finally {
+        setMemoryBusy(false);
+        setSnackbarMessage(t("memory_saved_badge", persisted.language));
+      }
+    },
+    [activeStudent?.id, persisted.language]
+  );
+
+  const resetStudentMemoryPrefs = useCallback(async () => {
+    const sid = activeStudent?.id ?? "stu-1";
+    setMemoryBusy(true);
+    try {
+      const fresh = await AiToolkitClient.resetStudentMemory(sid);
+      setStudentMemory(fresh);
+    } catch {
+      setStudentMemory((prev) => ({
+        ...prev,
+        learningPace: "balanced",
+        preferredStyle: "step_by_step",
+        tonePreference: "warm_egyptian",
+        weakTopics: [],
+        emotionalTriggers: [],
+        updatedAtMillis: Date.now(),
+      }));
+    } finally {
+      setMemoryBusy(false);
+      setSnackbarMessage(t("memory_saved_badge", persisted.language));
+    }
+  }, [activeStudent?.id, persisted.language]);
+
   const askStudyAssistant = useCallback(
     async (prompt: string, subject = "الرياضيات والفيزياء", photoDataUrl: string | null = null) => {
       const lang = persisted.language;
@@ -1580,13 +1978,14 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       };
       const priorHistory = assistantMessages;
       const botId = `msg-b-${Date.now() + 1}`;
+      const sid = activeStudent?.id ?? "stu-1";
       setAssistantMessages((prev) => [...prev, userMsg]);
       setAssistantBusy(true);
       setAssistantError(null);
 
       try {
-        let addedBubble = false;
-        const fullText = await AiToolkitClient.streamStudyChat({
+        let capturedMeta: CognitiveMeta | undefined;
+        const outcome = await AiToolkitClient.streamStudyChat({
           prompt: clean,
           history: priorHistory,
           photoDataUrl,
@@ -1594,30 +1993,72 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           subject,
           report: operatingReport,
           lang,
+          explicitMood: selectedMood,
+          studentId: sid,
+          memory: studentMemory,
+          onMeta: (meta) => {
+            capturedMeta = meta;
+          },
           onChunk: (accumulated) => {
+            if (!accumulated.trim()) return;
             setAssistantMessages((prev) => {
-              if (!addedBubble) {
-                addedBubble = true;
-                return [...prev, { id: botId, fromUser: false, text: accumulated, suggestions: [] }];
+              const exists = prev.some((m) => m.id === botId);
+              if (!exists) {
+                return [
+                  ...prev,
+                  {
+                    id: botId,
+                    fromUser: false,
+                    text: accumulated,
+                    suggestions: [],
+                    cognitiveMeta: capturedMeta ?? null,
+                  },
+                ];
               }
-              return prev.map((m) => (m.id === botId ? { ...m, text: accumulated } : m));
+              return prev.map((m) =>
+                m.id === botId
+                  ? { ...m, text: accumulated, cognitiveMeta: capturedMeta ?? m.cognitiveMeta }
+                  : m
+              );
             });
           },
         });
         const followUps =
           lang === AppLanguage.AR
-            ? ["اشرح الخطوة السابقة ببساطة", "أعطني مسألة تدريب"]
+            ? ["اشرح الخطوة السابقة ببساطة", "أعطني مسألة تدريب على نفس الفكرة"]
             : ["Explain the last step simply", "Give me a practice problem"];
-        setAssistantMessages((prev) =>
-          prev.map((m) => (m.id === botId ? { ...m, text: fullText, suggestions: followUps } : m))
-        );
+        setAssistantMessages((prev) => {
+          const exists = prev.some((m) => m.id === botId);
+          if (!exists) {
+            return [
+              ...prev,
+              {
+                id: botId,
+                fromUser: false,
+                text: outcome.text,
+                suggestions: followUps,
+                cognitiveMeta: outcome.meta ?? capturedMeta ?? null,
+              },
+            ];
+          }
+          return prev.map((m) =>
+            m.id === botId
+              ? {
+                  ...m,
+                  text: outcome.text,
+                  suggestions: followUps,
+                  cognitiveMeta: outcome.meta ?? capturedMeta ?? m.cognitiveMeta ?? null,
+                }
+              : m
+          );
+        });
       } catch (err) {
         setAssistantError(err instanceof Error ? err.message : "Assistant unavailable");
       } finally {
         setAssistantBusy(false);
       }
     },
-    [assistantMessages, persisted.language, persisted.activeRole, operatingReport]
+    [assistantMessages, persisted.language, persisted.activeRole, operatingReport, selectedMood, activeStudent?.id, studentMemory]
   );
 
   const requestOperationalBriefing = useCallback(async () => {
@@ -1678,7 +2119,9 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     async (studentId?: string | null) => {
       const lang = persisted.language;
       const target =
-        (studentId ? persisted.students.find((s) => s.id === studentId) : undefined) ?? persisted.students[0];
+        (studentId ? persisted.students.find((s) => s.id === studentId) : undefined) ??
+        (persisted.activeRole === UserRole.PARENT ? linkedParentStudent : activeStudent) ??
+        persisted.students[0];
       if (!target) return;
       const grp = persisted.groups.find((g) => g.id === target.groupId);
       const groupName = grp
@@ -1712,10 +2155,13 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     },
     [
       persisted.language,
+      persisted.activeRole,
       persisted.students,
       persisted.groups,
       persisted.attendance,
       persisted.completedCourseIds.length,
+      activeStudent,
+      linkedParentStudent,
       rescueItems,
       upsertEvaluation,
     ]
@@ -1728,7 +2174,7 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 
   const refreshParentWeeklyDigest = useCallback(async () => {
-    const student = persisted.students[0];
+    const student = linkedParentStudent ?? persisted.students[0];
     if (!student) return;
     const lang = persisted.language;
     const attendanceCount = persisted.attendance.filter((a) => a.studentId === student.id).length;
@@ -1751,7 +2197,14 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         message: err instanceof Error ? err.message : t("parent_digest_error", lang),
       });
     }
-  }, [persisted.students, persisted.language, persisted.attendance, rescueItems, operatingReport.studentProfiles]);
+  }, [
+    linkedParentStudent,
+    persisted.students,
+    persisted.language,
+    persisted.attendance,
+    rescueItems,
+    operatingReport.studentProfiles,
+  ]);
 
   const composeSecretaryNotice = useCallback(
     async (student: StudentEntity) => {
@@ -1827,6 +2280,292 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [shiftReconciliation, persisted.attendance, persisted.language]
   );
 
+  const issueMakeupSession = useCallback(
+    (student: StudentEntity, toGroupId: string, scheduledDateLabel: string, note: string) => {
+      if (!toGroupId || !scheduledDateLabel.trim()) return;
+      const item: MakeupSessionEntity = {
+        id: `mkp-${Date.now()}-${crypto.randomUUID().slice(0, 5)}`,
+        studentId: student.id,
+        studentNameAr: student.nameAr,
+        studentNameEn: student.nameEn,
+        fromGroupId: student.groupId,
+        toGroupId,
+        scheduledDateLabel: scheduledDateLabel.trim(),
+        note: note.trim() || "حصة تعويضية معتمدة",
+        status: "scheduled",
+        createdAtMillis: Date.now(),
+        syncStatus: "pending",
+      };
+      setPersisted((p) => ({ ...p, makeupSessions: [item, ...p.makeupSessions] }));
+      pushParentAlert({
+        studentId: student.id,
+        kind: "makeup",
+        titleAr: "تم اعتماد حصة تعويضية",
+        titleEn: "Makeup Session Issued",
+        bodyAr: `تصريح حضور تعويضي للطالب ${student.nameAr} في موعد ${scheduledDateLabel.trim()}.`,
+        bodyEn: `Makeup session pass issued for ${student.nameEn} on ${scheduledDateLabel.trim()}.`,
+      });
+      setSnackbarMessage(persisted.language === AppLanguage.AR ? "تم إصدار تصريح الحصة التعويضية" : "Makeup pass issued");
+    },
+    [persisted.language, pushParentAlert]
+  );
+
+  const redeemMakeupSession = useCallback(
+    (makeupId: string) => {
+      setPersisted((p) => ({
+        ...p,
+        makeupSessions: p.makeupSessions.map((m) =>
+          m.id === makeupId ? { ...m, status: "redeemed", syncStatus: "pending" } : m
+        ),
+      }));
+      setSnackbarMessage(
+        persisted.language === AppLanguage.AR ? "تم تفعيل الحضور التعويضي بنجاح" : "Makeup session redeemed"
+      );
+    },
+    [persisted.language]
+  );
+
+  const createHomeworkAssignment = useCallback(
+    (groupId: string, title: string, description: string, dueDate: string, maxScore: number) => {
+      if (!title.trim() || !description.trim()) return;
+      const item: HomeworkAssignmentEntity = {
+        id: `hw-${Date.now()}`,
+        groupId: groupId || persisted.groups[0]?.id || "grp-math-3sec",
+        titleAr: title.trim(),
+        titleEn: title.trim(),
+        descriptionAr: description.trim(),
+        descriptionEn: description.trim(),
+        dueDateLabel: dueDate.trim() || "الأسبوع القادم",
+        maxScore: Math.max(5, Number(maxScore) || 20),
+        createdAtMillis: Date.now(),
+      };
+      setPersisted((p) => ({ ...p, homeworkAssignments: [item, ...p.homeworkAssignments] }));
+      setSnackbarMessage(persisted.language === AppLanguage.AR ? "تم نشر الواجب بنجاح" : "Homework assigned");
+    },
+    [persisted.groups, persisted.language]
+  );
+
+  const submitHomework = useCallback(
+    (assignmentId: string, notes: string, attachmentDataUrl: string | null = null) => {
+      const target = activeStudent ?? persisted.students[0];
+      if (!target || (!notes.trim() && !attachmentDataUrl)) return;
+      const item: HomeworkSubmissionEntity = {
+        id: `hwsub-${Date.now()}-${crypto.randomUUID().slice(0, 5)}`,
+        assignmentId,
+        studentId: target.id,
+        studentNameAr: target.nameAr,
+        studentNameEn: target.nameEn,
+        notes: notes.trim() || "حل مرفق بالصورة",
+        attachmentDataUrl,
+        score: null,
+        feedback: null,
+        status: "submitted",
+        submittedAtMillis: Date.now(),
+        syncStatus: "pending",
+      };
+      setPersisted((p) => ({
+        ...p,
+        homeworkSubmissions: [
+          item,
+          ...p.homeworkSubmissions.filter((s) => !(s.assignmentId === assignmentId && s.studentId === target.id)),
+        ],
+      }));
+      setSnackbarMessage(persisted.language === AppLanguage.AR ? "تم تسليم الواجب بنجاح" : "Homework submitted");
+    },
+    [activeStudent, persisted.students, persisted.language]
+  );
+
+  const gradeHomework = useCallback(
+    (submissionId: string, score: number, feedback: string) => {
+      setPersisted((p) => ({
+        ...p,
+        homeworkSubmissions: p.homeworkSubmissions.map((s) =>
+          s.id === submissionId
+            ? {
+                ...s,
+                score,
+                feedback: feedback.trim() || "ممتاز، استمر",
+                status: "graded",
+                syncStatus: "pending",
+              }
+            : s
+        ),
+      }));
+      setSnackbarMessage(persisted.language === AppLanguage.AR ? "تم رصد درجة الواجب" : "Homework graded");
+    },
+    [persisted.language]
+  );
+
+  const toggleMistakeMastered = useCallback((mistakeId: string) => {
+    setPersisted((p) => ({
+      ...p,
+      mistakeBank: p.mistakeBank.map((m) =>
+        m.id === mistakeId ? { ...m, mastered: !m.mastered, syncStatus: "pending" } : m
+      ),
+    }));
+  }, []);
+
+  const explainMistakeWithAi = useCallback(
+    async (mistakeId: string) => {
+      const entry = persisted.mistakeBank.find((m) => m.id === mistakeId);
+      if (!entry) return;
+      const breakdown = await AiToolkitClient.explainMistake({
+        topicTag: persisted.language === AppLanguage.AR ? entry.topicTagAr : entry.topicTagEn,
+        questionPrompt: persisted.language === AppLanguage.AR ? entry.questionPromptAr : entry.questionPromptEn,
+        wrongAnswer: entry.wrongAnswer,
+        correctAnswer: entry.correctAnswer,
+        lang: persisted.language,
+      });
+      setPersisted((p) => ({
+        ...p,
+        mistakeBank: p.mistakeBank.map((m) =>
+          m.id === mistakeId ? { ...m, aiBreakdown: breakdown, syncStatus: "pending" } : m
+        ),
+      }));
+    },
+    [persisted.mistakeBank, persisted.language]
+  );
+
+  const createAnnouncement = useCallback(
+    (groupId: string | null, title: string, body: string, pinned: boolean) => {
+      if (!title.trim() || !body.trim()) return;
+      const item: AnnouncementEntity = {
+        id: `ann-${Date.now()}`,
+        groupId,
+        titleAr: title.trim(),
+        titleEn: title.trim(),
+        bodyAr: body.trim(),
+        bodyEn: body.trim(),
+        authorName: persisted.userLabel || "إدارة السنتر",
+        pinned,
+        readByIds: [],
+        createdAtMillis: Date.now(),
+      };
+      setPersisted((p) => ({ ...p, announcements: [item, ...p.announcements] }));
+      setSnackbarMessage(persisted.language === AppLanguage.AR ? "تم نشر الإعلان" : "Announcement published");
+    },
+    [persisted.userLabel, persisted.language]
+  );
+
+  const markAnnouncementRead = useCallback(
+    (announcementId: string) => {
+      const readerId = activeStudent?.id ?? persisted.activeRole;
+      setPersisted((p) => ({
+        ...p,
+        announcements: p.announcements.map((a) =>
+          a.id === announcementId && !a.readByIds.includes(readerId)
+            ? { ...a, readByIds: [...a.readByIds, readerId] }
+            : a
+        ),
+      }));
+    },
+    [activeStudent?.id, persisted.activeRole]
+  );
+
+  const createSupportTicket = useCallback(
+    (subject: string, message: string) => {
+      if (!subject.trim() || !message.trim()) return;
+      const item: SupportTicketEntity = {
+        id: `tkt-${Date.now()}`,
+        authorId: activeStudent?.id ?? "user",
+        authorName: persisted.userLabel || "ولي أمر",
+        authorRole: persisted.activeRole,
+        subject: subject.trim(),
+        message: message.trim(),
+        replyText: null,
+        status: "open",
+        createdAtMillis: Date.now(),
+        syncStatus: "pending",
+      };
+      setPersisted((p) => ({ ...p, supportTickets: [item, ...p.supportTickets] }));
+      setSnackbarMessage(persisted.language === AppLanguage.AR ? "تم إرسال التذكرة بنجاح" : "Support ticket sent");
+    },
+    [activeStudent?.id, persisted.userLabel, persisted.activeRole, persisted.language]
+  );
+
+  const replySupportTicket = useCallback(
+    (ticketId: string, replyText: string) => {
+      if (!replyText.trim()) return;
+      setPersisted((p) => ({
+        ...p,
+        supportTickets: p.supportTickets.map((tk) =>
+          tk.id === ticketId
+            ? { ...tk, replyText: replyText.trim(), status: "answered", syncStatus: "pending" }
+            : tk
+        ),
+      }));
+      setSnackbarMessage(persisted.language === AppLanguage.AR ? "تم إرسال الرد" : "Reply sent");
+    },
+    [persisted.language]
+  );
+
+  const linkChildByInviteCode = useCallback(
+    (inviteCode: string): { ok: boolean; error?: string } => {
+      const clean = inviteCode.trim().toUpperCase();
+      if (!clean) {
+        return { ok: false, error: t("validation_required", persisted.language) };
+      }
+      const match = persisted.students.find(
+        (s) =>
+          s.parentInviteCode?.toUpperCase() === clean ||
+          s.qrActivationCode?.toUpperCase() === clean
+      );
+      if (!match) {
+        return {
+          ok: false,
+          error:
+            persisted.language === AppLanguage.AR
+              ? "لم يتم العثور على طالب بهذا الكود"
+              : "No student matches this invite code",
+        };
+      }
+      setPersisted((p) => ({ ...p, linkedParentStudentId: match.id }));
+      setSnackbarMessage(
+        persisted.language === AppLanguage.AR
+          ? `تم ربط حساب ${match.nameAr} بنجاح`
+          : `Linked ${match.nameEn} successfully`
+      );
+      return { ok: true };
+    },
+    [persisted.students, persisted.language]
+  );
+
+  const markParentAlertRead = useCallback((alertId: string) => {
+    setPersisted((p) => ({
+      ...p,
+      parentAlerts: p.parentAlerts.map((a) => (a.id === alertId ? { ...a, isRead: true } : a)),
+    }));
+  }, []);
+
+  const exportFinancialCsv = useCallback(() => {
+    const header = ["ID", "Student", "Kind", "Amount_EGP", "Remaining_Due_EGP", "Note", "Role", "Timestamp"];
+    const rows = persisted.ledger.map((e) => [
+      e.id,
+      persisted.language === AppLanguage.AR ? e.studentNameAr : e.studentNameEn,
+      ledgerKindLabel(e.kind, persisted.language),
+      (e.amountPiasters / 100).toFixed(2),
+      (e.remainingDuePiasters / 100).toFixed(2),
+      e.note.replace(/"/g, '""'),
+      e.createdByRole,
+      new Date(e.createdAtMillis).toISOString(),
+    ]);
+    const csvContent =
+      "\uFEFF" +
+      [header, ...rows].map((cols) => cols.map((c) => `"${String(c)}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `kashkool-ledger-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setSnackbarMessage(
+      persisted.language === AppLanguage.AR ? "تم تصدير كشف الحساب CSV" : "Financial CSV exported"
+    );
+  }, [persisted.ledger, persisted.language]);
+
   // Sync latest persisted Evaluation if user previously saved one
   useEffect(() => {
     if (evaluationState.status === "idle" && persisted.evaluations.length > 0) {
@@ -1884,6 +2623,12 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     assistantMessages,
     assistantBusy,
     assistantError,
+    selectedMood,
+    setSelectedMood,
+    studentMemory,
+    memoryBusy,
+    updateStudentMemoryPrefs,
+    resetStudentMemoryPrefs,
     activeLectureId,
     activeLectureTitle,
     adaptiveQuizQuestions,
@@ -1909,6 +2654,15 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     parentDigestState,
     secretaryNoticeState,
     teacherPlanState,
+    isOnline,
+    linkedParentStudent,
+    makeupSessions: persisted.makeupSessions,
+    homeworkAssignments: persisted.homeworkAssignments,
+    homeworkSubmissions: persisted.homeworkSubmissions,
+    mistakeBank: persisted.mistakeBank,
+    announcements: persisted.announcements,
+    supportTickets: persisted.supportTickets,
+    parentAlerts: persisted.parentAlerts,
     tr,
     showSnackbar,
     clearSnackbar,
@@ -1976,6 +2730,22 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     dismissSecretaryNotice,
     generateTeacherLessonPlan,
     buildThermalReceipt,
+    issueMakeupSession,
+    redeemMakeupSession,
+    createHomeworkAssignment,
+    submitHomework,
+    gradeHomework,
+    addMistakeEntries,
+    toggleMistakeMastered,
+    explainMistakeWithAi,
+    createAnnouncement,
+    markAnnouncementRead,
+    createSupportTicket,
+    replySupportTicket,
+    linkChildByInviteCode,
+    markParentAlertRead,
+    pushParentAlert,
+    exportFinancialCsv,
   };
 
   return <KashkoolContext.Provider value={value}>{children}</KashkoolContext.Provider>;

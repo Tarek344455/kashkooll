@@ -28,6 +28,7 @@ export const DashboardHomeScreen: React.FC<{
     language,
     activeRole,
     activeStudent,
+    linkedParentStudent,
     attendance,
     operatingReport,
     rescueItems,
@@ -44,7 +45,7 @@ export const DashboardHomeScreen: React.FC<{
   const isAr = language === AppLanguage.AR;
   const isStaff = activeRole === UserRole.SECRETARY || activeRole === UserRole.TEACHER;
 
-  const student = activeStudent;
+  const student = activeRole === UserRole.PARENT ? linkedParentStudent ?? activeStudent : activeStudent;
   const walletEgp = student ? EgyptValidators.formatPiasters(student.walletBalancePiasters, language) : "0";
   const todayCount = attendance.filter((a) => a.feedbackStatus !== "blocked").length;
   const treasuryEgp = EgyptValidators.formatPiasters(
@@ -181,8 +182,8 @@ export const DashboardHomeScreen: React.FC<{
         </div>
       )}
 
-      {/* Student QR Pass for Student / Parent */}
-      {!isStaff && <StudentQrPassCard />}
+      {/* Student QR Pass (Student role only) */}
+      {activeRole === UserRole.STUDENT && <StudentQrPassCard />}
 
       {/* Staff Certainty & Operational Briefing Card */}
       {isStaff && (

@@ -120,6 +120,7 @@ export interface StudentEntity {
   masteryPercent: number;
   isBlocked: boolean;
   qrActivationCode?: string | null;
+  parentInviteCode?: string | null;
 }
 
 export interface AttendanceEntity {
@@ -233,12 +234,56 @@ export interface QrVerificationBanner {
   checkedAtMillis: number;
 }
 
+export type EmotionalPulse =
+  | "EXAM_ANXIETY"
+  | "FRUSTRATION"
+  | "BURNOUT"
+  | "LOW_CONFIDENCE"
+  | "CURIOSITY"
+  | "DISTRACTION"
+  | "CALM";
+
+export type RoutingLane =
+  | "ULTRA_FAST_EMPATHETIC"
+  | "DEEP_COGNITIVE_REASONING"
+  | "VISION_MULTIMODAL"
+  | "STRUCTURED_JSON";
+
+export interface CognitiveMeta {
+  emotion: EmotionalPulse;
+  lane: RoutingLane;
+  strategyAr: string;
+  strategyEn: string;
+  memoryApplied: boolean;
+  ttftMs?: number;
+}
+
+export interface StudentAiMemory {
+  studentId: string;
+  tenantId: string;
+  learningPace: "gentle" | "balanced" | "intensive";
+  preferredStyle: "step_by_step" | "visual_examples" | "socratic" | "concise_summary";
+  tonePreference: "warm_egyptian" | "calm_academic" | "encouraging_coach";
+  academicTrack: string;
+  weakTopics: string[];
+  emotionalTriggers: string[];
+  studyHabits: {
+    preferredSessionMinutes?: number;
+    prefersHintsFirst?: boolean;
+    needsFrequentCheckIns?: boolean;
+  };
+  lastEmotion: EmotionalPulse;
+  totalSessionsCount: number;
+  updatedAtMillis: number;
+}
+
 export interface AssistantMessage {
   id: string;
   fromUser: boolean;
   text: string;
   suggestions: string[];
   attachedPhotoDataUrl?: string | null;
+  cognitiveMeta?: CognitiveMeta | null;
 }
 
 export interface QuizQuestion {
@@ -562,3 +607,260 @@ export type AppDestination =
   | "wallet"
   | "assistant"
   | "parent";
+
+export interface MakeupSessionEntity {
+  id: string;
+  studentId: string;
+  studentNameAr: string;
+  studentNameEn: string;
+  fromGroupId: string;
+  toGroupId: string;
+  scheduledDateLabel: string;
+  note: string;
+  status: "scheduled" | "redeemed" | "cancelled";
+  createdAtMillis: number;
+  syncStatus: string;
+}
+
+export interface HomeworkAssignmentEntity {
+  id: string;
+  groupId: string;
+  titleAr: string;
+  titleEn: string;
+  descriptionAr: string;
+  descriptionEn: string;
+  dueDateLabel: string;
+  maxScore: number;
+  createdAtMillis: number;
+}
+
+export interface HomeworkSubmissionEntity {
+  id: string;
+  assignmentId: string;
+  studentId: string;
+  studentNameAr: string;
+  studentNameEn: string;
+  notes: string;
+  attachmentDataUrl?: string | null;
+  score?: number | null;
+  feedback?: string | null;
+  status: "submitted" | "graded";
+  submittedAtMillis: number;
+  syncStatus: string;
+}
+
+export interface MistakeBankEntry {
+  id: string;
+  studentId: string;
+  sourceType: "quiz" | "exam" | "homework";
+  topicTagAr: string;
+  topicTagEn: string;
+  questionPromptAr: string;
+  questionPromptEn: string;
+  wrongAnswer: string;
+  correctAnswer: string;
+  remedialAr: string;
+  remedialEn: string;
+  aiBreakdown?: {
+    whyMistakeHappens: string;
+    stepByStepFix: string[];
+    goldenRule: string;
+  } | null;
+  mastered: boolean;
+  createdAtMillis: number;
+  syncStatus: string;
+}
+
+export interface AnnouncementEntity {
+  id: string;
+  groupId: string | null;
+  titleAr: string;
+  titleEn: string;
+  bodyAr: string;
+  bodyEn: string;
+  authorName: string;
+  pinned: boolean;
+  readByIds: string[];
+  createdAtMillis: number;
+}
+
+export interface SupportTicketEntity {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorRole: UserRole;
+  subject: string;
+  message: string;
+  replyText?: string | null;
+  status: "open" | "answered" | "closed";
+  createdAtMillis: number;
+  syncStatus: string;
+}
+
+export interface ParentAlertEntity {
+  id: string;
+  studentId: string;
+  kind: "arrival" | "due" | "exam" | "makeup" | "system";
+  titleAr: string;
+  titleEn: string;
+  bodyAr: string;
+  bodyEn: string;
+  isRead: boolean;
+  createdAtMillis: number;
+}
+
+export interface ExamCertificateDto {
+  id: string;
+  attemptId: string;
+  examId: string;
+  studentId: string;
+  studentName: string;
+  examTitleAr: string;
+  examTitleEn: string;
+  percentScore: number;
+  certHash: string;
+  qrPayload: string;
+  issuedAtMillis: number;
+}
+
+export interface ExamSummaryDto {
+  exam: {
+    id: string;
+    tenantId: string;
+    groupId: string;
+    titleAr: string;
+    titleEn: string;
+    subjectAr: string;
+    subjectEn: string;
+    durationMinutes: number;
+    passPercent: number;
+    maxViolations: number;
+    isPublished: boolean;
+    createdAtMillis: number;
+  };
+  questionCount: number;
+  totalPoints: number;
+  myAttempt: {
+    attemptId: string;
+    status: "in_progress" | "submitted" | "locked_violation" | "expired";
+    percentScore: number;
+    violationsCount: number;
+    hardDeadlineAtMillis: number;
+    certificate: ExamCertificateDto | null;
+  } | null;
+}
+
+export interface SanitizedExamQuestionDto {
+  id: string;
+  topicTagAr: string;
+  topicTagEn: string;
+  promptAr: string;
+  promptEn: string;
+  formula: string;
+  options: string[];
+  points: number;
+}
+
+export interface SanitizedExamAttemptDto {
+  exam: ExamSummaryDto["exam"];
+  attemptId: string;
+  status: "in_progress" | "submitted" | "locked_violation" | "expired";
+  startedAtMillis: number;
+  hardDeadlineAtMillis: number;
+  serverNowMillis: number;
+  forensicWatermark: string;
+  violationsCount: number;
+  maxViolations: number;
+  answersByQuestion: Record<string, number>;
+  questions: SanitizedExamQuestionDto[];
+}
+
+export interface ExamResultDto {
+  attemptId: string;
+  examId: string;
+  examTitleAr: string;
+  examTitleEn: string;
+  studentId: string;
+  studentName: string;
+  status: "in_progress" | "submitted" | "locked_violation" | "expired";
+  scorePoints: number;
+  maxPoints: number;
+  percentScore: number;
+  passPercent: number;
+  passed: boolean;
+  rank: number;
+  totalGraded: number;
+  percentile: number;
+  violationsCount: number;
+  submittedAtMillis: number;
+  certificate: ExamCertificateDto | null;
+  breakdown: Array<{
+    questionId: string;
+    topicTagAr: string;
+    topicTagEn: string;
+    promptAr: string;
+    promptEn: string;
+    selectedOptionText: string | null;
+    correctOptionText: string;
+    isCorrect: boolean;
+    pointsEarned: number;
+    maxPoints: number;
+    remedialAr: string;
+    remedialEn: string;
+  }>;
+  mistakes: Array<{
+    questionId: string;
+    topicTagAr: string;
+    topicTagEn: string;
+    promptAr: string;
+    promptEn: string;
+    wrongAnswer: string;
+    correctAnswer: string;
+    remedialAr: string;
+    remedialEn: string;
+  }>;
+}
+
+export interface ExamAttemptMonitorDto {
+  attemptId: string;
+  studentId: string;
+  studentName: string;
+  studentCode: string;
+  deviceId: string;
+  status: "in_progress" | "submitted" | "locked_violation" | "expired";
+  violationsCount: number;
+  percentScore: number;
+  answeredCount: number;
+  totalQuestions: number;
+  lastHeartbeatAtMillis: number;
+  recentEvents: Array<{
+    id: string;
+    eventType: string;
+    detail: string;
+    occurredAtMillis: number;
+  }>;
+}
+
+export interface AuditLogEntryDto {
+  id: string;
+  tenantId: string;
+  actorId: string;
+  actorRole: string;
+  action: string;
+  targetTable: string;
+  targetId: string;
+  detail: string;
+  createdAtMillis: number;
+}
+
+export interface DeviceBindingDto {
+  id: string;
+  tenantId: string;
+  actorId: string;
+  deviceFingerprint: string;
+  deviceLabel: string;
+  isRevoked: boolean;
+  suspiciousVelocity: boolean;
+  lastSeenAtMillis: number;
+  createdAtMillis: number;
+}

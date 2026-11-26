@@ -185,8 +185,38 @@ class KashkoolAiClient(
             rateLimitScope = RateLimitScope.MODEL,
             note = "OpenCode models. Requires OPENCODE_API_KEY in .env",
         )
+        val groqKey = getEnv("GROQ_API_KEY") ?: ""
+        val groq = AiProvider(
+            id = "groq",
+            name = "Groq Ultra-Fast LPU",
+            baseUrl = "https://api.groq.com/openai/v1",
+            apiKey = groqKey,
+            requiresApiKey = true,
+            enabled = groqKey.isNotBlank(),
+            maxConcurrent = 8,
+            minIntervalMs = 50,
+            cooldownMs = 15000,
+            authCooldownMs = 3600000,
+            rateLimitScope = RateLimitScope.MODEL,
+            note = "Ultra-low-latency empathetic conversational lane (< 400ms TTFT). Requires GROQ_API_KEY.",
+        )
+        val deepseekKey = getEnv("DEEPSEEK_API_KEY") ?: ""
+        val deepseek = AiProvider(
+            id = "deepseek",
+            name = "DeepSeek Cognitive Engine",
+            baseUrl = "https://api.deepseek.com/v1",
+            apiKey = deepseekKey,
+            requiresApiKey = true,
+            enabled = deepseekKey.isNotBlank(),
+            maxConcurrent = 6,
+            minIntervalMs = 100,
+            cooldownMs = 20000,
+            authCooldownMs = 3600000,
+            rateLimitScope = RateLimitScope.MODEL,
+            note = "Deep cognitive reasoning lane for math, physics, and mistake diagnosis. Requires DEEPSEEK_API_KEY.",
+        )
 
-        listOf(kilo, llm7, pollinations, localGemma, openrouter, nvidia, opencode).forEach { provider ->
+        listOf(kilo, llm7, pollinations, localGemma, openrouter, nvidia, opencode, groq, deepseek).forEach { provider ->
             providers[provider.id] = provider
             health[provider.id] = ProviderHealth(providerId = provider.id, isHealthy = provider.enabled)
             inFlight[provider.id] = 0
@@ -318,6 +348,21 @@ class KashkoolAiClient(
 
         val openrouterModels = listOf(
             AiModel(
+                id = "openrouter-deepseek-r1",
+                name = "DeepSeek R1 via OpenRouter",
+                upstreamModel = "deepseek/deepseek-r1:free",
+                providerId = "openrouter",
+                quality = 0.92,
+                contextWindow = 131072,
+                supportsTools = false,
+                minOutputTokens = 512,
+                description = "DeepSeek R1 deep reasoning lane via OpenRouter. Ideal for complex Thanaweya Amma math & physics.",
+                tags = listOf(
+                    ModelTags.REASONING, ModelTags.ANALYTICAL, ModelTags.CODING, ModelTags.FREE,
+                ),
+                maxOutputTokens = 8192,
+            ),
+            AiModel(
                 id = "openrouter-nemotron",
                 name = "Nemotron via OpenRouter",
                 upstreamModel = "nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -330,6 +375,72 @@ class KashkoolAiClient(
                     "in the free tier. Requires OPENROUTER_API_KEY.",
                 tags = listOf(
                     ModelTags.REASONING, ModelTags.CODING, ModelTags.ANALYTICAL,
+                ),
+                maxOutputTokens = 8192,
+            ),
+        )
+
+        val groqModels = listOf(
+            AiModel(
+                id = "groq-llama-3.3-70b-versatile",
+                name = "Groq Llama 3.3 70B Versatile",
+                upstreamModel = "llama-3.3-70b-versatile",
+                providerId = "groq",
+                quality = 0.90,
+                contextWindow = 131072,
+                supportsTools = true,
+                minOutputTokens = 256,
+                description = "Ultra-fast empathetic conversational engine (< 400ms TTFT) on Groq LPU.",
+                tags = listOf(
+                    ModelTags.FAST, ModelTags.MULTILINGUAL, ModelTags.REASONING,
+                ),
+                maxOutputTokens = 8192,
+            ),
+            AiModel(
+                id = "groq-llama-3.1-8b-instant",
+                name = "Groq Llama 3.1 8B Instant",
+                upstreamModel = "llama-3.1-8b-instant",
+                providerId = "groq",
+                quality = 0.81,
+                contextWindow = 131072,
+                supportsTools = true,
+                minOutputTokens = 128,
+                description = "Sub-200ms TTFT quick check-in and emotional support engine via Groq.",
+                tags = listOf(
+                    ModelTags.FAST, ModelTags.MULTILINGUAL,
+                ),
+                maxOutputTokens = 4096,
+            ),
+        )
+
+        val deepseekModels = listOf(
+            AiModel(
+                id = "deepseek-reasoner",
+                name = "DeepSeek R1 Reasoner",
+                upstreamModel = "deepseek-reasoner",
+                providerId = "deepseek",
+                quality = 0.94,
+                contextWindow = 65536,
+                supportsTools = false,
+                minOutputTokens = 512,
+                description = "Deep cognitive reasoning model for calculus, physics proofs, and root-cause diagnosis.",
+                tags = listOf(
+                    ModelTags.REASONING, ModelTags.ANALYTICAL, ModelTags.CODING,
+                ),
+                maxOutputTokens = 8192,
+            ),
+            AiModel(
+                id = "deepseek-chat",
+                name = "DeepSeek V3 Chat",
+                upstreamModel = "deepseek-chat",
+                providerId = "deepseek",
+                quality = 0.89,
+                contextWindow = 65536,
+                supportsTools = true,
+                minOutputTokens = 256,
+                description = "Fast, reliable DeepSeek V3 conversational & structured JSON engine.",
+                tags = listOf(
+                    ModelTags.FAST, ModelTags.MULTILINGUAL, ModelTags.CODING,
                 ),
                 maxOutputTokens = 8192,
             ),
@@ -392,7 +503,7 @@ class KashkoolAiClient(
             ),
         )
 
-        (kiloModels + llm7Models + pollinationsModels + openrouterModels + nvidiaModels + opencodeModels + localModels).forEach { model ->
+        (kiloModels + llm7Models + pollinationsModels + openrouterModels + groqModels + deepseekModels + nvidiaModels + opencodeModels + localModels).forEach { model ->
             models[model.id] = model
         }
     }
@@ -400,6 +511,50 @@ class KashkoolAiClient(
     // ------------------------------------------------------------------
     // Public chat API
     // ------------------------------------------------------------------
+
+    /**
+     * Runs the 4-layer Cognitive & Psychologically Comforting Student Engine
+     * with dynamic lane routing (`ULTRA_FAST_EMPATHETIC` vs `DEEP_COGNITIVE_REASONING`)
+     * and Layer 4 output safety filtering.
+     */
+    suspend fun cognitiveChat(
+        message: String,
+        memory: StudentAdaptiveProfile? = null,
+        explicitMood: EmotionalPulse? = null,
+        isArabic: Boolean = true,
+        modelId: String? = null,
+        temperature: Double = config.defaultTemperature,
+        maxTokens: Int? = null,
+        onChunk: ((String) -> Unit)? = null,
+    ): Result<CognitiveChatOutcome> {
+        val plan = CognitivePipeline.plan(
+            message = message,
+            memory = memory,
+            explicitMood = explicitMood,
+            hasVisionMedia = false,
+            requireJson = false,
+            isArabic = isArabic,
+        )
+        val rawResult = chatInternal(
+            message = message,
+            systemPrompt = plan.effectiveSystemPrompt,
+            modelId = modelId,
+            lane = plan.lane,
+            temperature = temperature,
+            maxTokens = maxTokens,
+            tools = null,
+            onChunk = onChunk,
+        )
+        return rawResult.map { resp ->
+            val rawText = resp.choices.firstOrNull()?.message?.content.orEmpty()
+            val sanitized = CognitivePipeline.sanitizeOutput(rawText)
+            CognitiveChatOutcome(
+                response = resp,
+                plan = plan,
+                sanitizedText = sanitized,
+            )
+        }
+    }
 
     /**
      * Sends [message] and returns the model's reply, using strongest-first
@@ -416,10 +571,30 @@ class KashkoolAiClient(
         maxTokens: Int? = null,
         tools: List<Tool>? = null,
         onChunk: ((String) -> Unit)? = null,
+    ): Result<ChatCompletionResponse> = chatInternal(
+        message = message,
+        systemPrompt = systemPrompt,
+        modelId = modelId,
+        lane = null,
+        temperature = temperature,
+        maxTokens = maxTokens,
+        tools = tools,
+        onChunk = onChunk,
+    )
+
+    private suspend fun chatInternal(
+        message: String,
+        systemPrompt: String?,
+        modelId: String?,
+        lane: RoutingLane?,
+        temperature: Double,
+        maxTokens: Int?,
+        tools: List<Tool>?,
+        onChunk: ((String) -> Unit)?,
     ): Result<ChatCompletionResponse> {
         _isProcessing.value = true
         try {
-            val candidates = stateMutex.withLock { eligibleModelsLocked(modelId) }
+            val candidates = stateMutex.withLock { eligibleModelsLocked(modelId, lane) }
             if (candidates.isEmpty()) {
                 return Result.failure(IllegalStateException("No eligible models available"))
             }
@@ -560,9 +735,9 @@ class KashkoolAiClient(
     // Routing internals (all *Locked methods require stateMutex)
     // ------------------------------------------------------------------
 
-    private fun eligibleModelsLocked(modelId: String?): List<AiModel> {
+    private fun eligibleModelsLocked(modelId: String?, lane: RoutingLane? = null): List<AiModel> {
         val now = nowMillis()
-        val eligible = models.values.filter { model ->
+        val base = models.values.filter { model ->
             val provider = providers[model.providerId] ?: return@filter false
             if (!provider.enabled || !model.isAvailable) return@filter false
             // Providers that require an API key are skipped if no key is configured
@@ -573,6 +748,25 @@ class KashkoolAiClient(
             }
             true
         }.sortedByDescending { it.effectiveQuality }
+
+        val eligible = when (lane) {
+            RoutingLane.ULTRA_FAST_EMPATHETIC -> {
+                val fast = base.filter { ModelTags.FAST in it.tags }
+                val rest = base.filter { ModelTags.FAST !in it.tags }
+                fast + rest
+            }
+            RoutingLane.DEEP_COGNITIVE_REASONING -> {
+                val deep = base.filter { ModelTags.REASONING in it.tags || ModelTags.ANALYTICAL in it.tags }
+                val rest = base.filter { ModelTags.REASONING !in it.tags && ModelTags.ANALYTICAL !in it.tags }
+                deep + rest
+            }
+            RoutingLane.VISION_MULTIMODAL -> {
+                val vision = base.filter { ModelTags.VISION in it.tags }
+                val rest = base.filter { ModelTags.VISION !in it.tags }
+                vision + rest
+            }
+            RoutingLane.STRUCTURED_JSON, null -> base
+        }
 
         if (modelId == null) return eligible
 
@@ -770,4 +964,14 @@ data class ClientStats(
     val healthyProviders: Int,
     val currentModel: String?,
     val isProcessing: Boolean,
+)
+
+/**
+ * Combined result from [KashkoolAiClient.cognitiveChat] carrying the 4-layer
+ * cognitive plan and sanitized user-safe Egyptian Arabic output.
+ */
+data class CognitiveChatOutcome(
+    val response: ChatCompletionResponse,
+    val plan: CognitivePlan,
+    val sanitizedText: String,
 )
