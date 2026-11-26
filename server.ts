@@ -621,7 +621,16 @@ export async function createKashkoolApp(options?: {
           ];
 
       let emitted = false;
-      let suppressThink = false;
+      let rawStreamed = "";
+      let lastVisibleLength = 0;
+
+      const stripStreamingThink = (raw: string): string => {
+        const withoutClosed = raw.replace(/<think>[\s\S]*?<\/think>/gi, "");
+        const openIdx = withoutClosed.toLowerCase().indexOf("<think>");
+        const safe = openIdx !== -1 ? withoutClosed.slice(0, openIdx) : withoutClosed;
+        return sanitizeCognitiveOutput(safe);
+      };
+
       const result = await aiRouter.chat({
         messages,
         systemPrompt: plan.effectiveSystemPrompt,
@@ -630,22 +639,24 @@ export async function createKashkoolApp(options?: {
         requireVision: hasValidPhoto,
         preferFast: plan.lane === "ULTRA_FAST_EMPATHETIC",
         temperature: 0.55,
+        onResetStream: () => {
+          rawStreamed = "";
+          lastVisibleLength = 0;
+          if (emitted) {
+            emitted = false;
+            res.write(`data: ${JSON.stringify({ reset: true })}\n\n`);
+          }
+        },
         onChunk: (piece) => {
           if (!piece) return;
-          if (piece.includes("<think>")) suppressThink = true;
-          if (suppressThink) {
-            if (piece.includes("</think>")) {
-              suppressThink = false;
-              const after = piece.split("</think>").pop() ?? "";
-              if (after.trim()) {
-                emitted = true;
-                res.write(`data: ${JSON.stringify({ chunk: sanitizeCognitiveOutput(after) })}\n\n`);
-              }
-            }
-            return;
+          rawStreamed += piece;
+          const visible = stripStreamingThink(rawStreamed);
+          if (visible.length > lastVisibleLength) {
+            const delta = visible.slice(lastVisibleLength);
+            lastVisibleLength = visible.length;
+            emitted = true;
+            res.write(`data: ${JSON.stringify({ chunk: delta })}\n\n`);
           }
-          emitted = true;
-          res.write(`data: ${JSON.stringify({ chunk: piece })}\n\n`);
         },
       });
 

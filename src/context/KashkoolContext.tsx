@@ -2053,7 +2053,14 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           );
         });
       } catch (err) {
-        setAssistantError(err instanceof Error ? err.message : "Assistant unavailable");
+        setAssistantMessages((prev) => prev.filter((m) => m.id !== botId));
+        setAssistantError(
+          err instanceof Error
+            ? err.message
+            : lang === AppLanguage.AR
+              ? "تعذر الاتصال بالمساعد الدراسي حالياً، جرّب تاني."
+              : "Assistant unavailable right now, please try again."
+        );
       } finally {
         setAssistantBusy(false);
       }

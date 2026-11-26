@@ -65,14 +65,18 @@ async function directJsonWithFallback<T>(params: {
   fallbackBody: unknown;
 }): Promise<T> {
   try {
-    const { data } = await directBrowserAi.chatJson<T>({
-      messages: [{ role: "user", content: params.prompt }],
-      systemPrompt: params.systemPrompt,
-      temperature: params.temperature ?? 0.4,
-    });
-    return data;
-  } catch {
-    return postJson<T>(params.fallbackUrl, params.fallbackBody);
+    return await postJson<T>(params.fallbackUrl, params.fallbackBody);
+  } catch (serverErr) {
+    try {
+      const { data } = await directBrowserAi.chatJson<T>({
+        messages: [{ role: "user", content: params.prompt }],
+        systemPrompt: params.systemPrompt,
+        temperature: params.temperature ?? 0.4,
+      });
+      return data;
+    } catch {
+      throw serverErr;
+    }
   }
 }
 
@@ -182,90 +186,72 @@ export const AiToolkitClient = {
       return { text: localPlan.cheatingGuardReply, meta: localPlan.meta };
     }
 
-    // Text requests connect directly from each user's browser to CORS-enabled AI servers first
-    // (zero shared server bottleneck). Vision or direct failures fall back to per-actor /api/ai/study-chat.
-    if (!hasPhoto) {
-      try {
-        const langHint = isAr ? "Arabic (clear Egyptian empathetic style)" : "English";
-        const contextualPrompt = [
-          `Language: ${langHint}`,
-          `User Role: ${params.role}`,
-          `Lesson / Context: ${params.subject}`,
-          `Verified 15-min Rescue Focus: ${knapsackSummary}`,
-          `System Certainty Score: ${params.report.certaintyScorePercent}%`,
-          "",
-          "Question / Request:",
-          params.prompt,
-          "",
-          "Respond warmly with numbered steps and a concise rule takeaway.",
-        ].join("\n");
-
-        const historyMessages: DirectChatMessage[] = params.history
-          .slice(1)
-          .slice(-6)
-          .map((m) => ({
-            role: m.fromUser ? "user" : "assistant",
-            content: String(m.text ?? "").slice(0, 600),
-          }));
-
-        const startedAt = Date.now();
-        const directRes = await directBrowserAi.chat({
-          messages: [...historyMessages, { role: "user", content: contextualPrompt }],
-          systemPrompt: localPlan.systemPrompt,
-          temperature: 0.55,
-          onChunk: (accumulated) => params.onChunk(accumulated),
-        });
-        const cleanFinal = sanitizeDirectOutput(directRes.text);
-        const enrichedMeta: CognitiveMeta = { ...localPlan.meta, ttftMs: directRes.ttftMs };
-        params.onMeta?.(enrichedMeta);
-        params.onChunk(cleanFinal);
-
-        // Non-blocking PII-scrubbed telemetry & adaptive memory update
-        void fetch("/api/ai/telemetry-ingest", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-kashkool-actor": actorId },
-          body: JSON.stringify({
-            studentId: actorId,
-            subject: params.subject,
-            emotion: enrichedMeta.emotion,
-            lane: enrichedMeta.lane,
-            modelId: directRes.model,
-            providerId: directRes.providerId,
-            ttftMs: directRes.ttftMs,
-            totalLatencyMs: Date.now() - startedAt,
-            promptInjectionFlagged: localPlan.promptInjectionFlagged,
-            promptExcerpt: params.prompt,
-            responseExcerpt: cleanFinal,
-            strategyCode: `${enrichedMeta.emotion} -> ${enrichedMeta.lane}`,
-          }),
-        }).catch(() => undefined);
-
-        return { text: cleanFinal, meta: enrichedMeta };
-      } catch {
-        // Transparent fallback to per-actor backend multi-engine cognitive router
-      }
+    // Primary path: per-actor backend cognitive router (/api/ai/study-chat) with full memory vault,
+    // Kilo/Groq/DeepSeek/OpenRouter/NVIDIA failover, and vision support.
+    // Falls back to direct browser AI providers if the backend is unreachable.
+    let res: Response | null = null;
+    try {
+      res = await fetch("/api/ai/study-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-kashkool-actor": actorId,
+        },
+        body: JSON.stringify({
+          prompt: params.prompt,
+          history: params.history,
+          photoDataUrl: params.photoDataUrl ?? null,
+          role: params.role,
+          subject: params.subject,
+          knapsackSummary,
+          certaintyScore: params.report.certaintyScorePercent,
+          lang: params.lang,
+          explicitMood: params.explicitMood ?? null,
+          studentId: actorId,
+        }),
+      });
+    } catch {
+      res = null;
     }
 
-    const res = await fetch("/api/ai/study-chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-kashkool-actor": actorId,
-      },
-      body: JSON.stringify({
-        prompt: params.prompt,
-        history: params.history,
-        photoDataUrl: params.photoDataUrl ?? null,
-        role: params.role,
-        subject: params.subject,
-        knapsackSummary,
-        certaintyScore: params.report.certaintyScorePercent,
-        lang: params.lang,
-        explicitMood: params.explicitMood ?? null,
-        studentId: actorId,
-      }),
-    });
+    if ((!res || !res.ok) && !hasPhoto) {
+      const langHint = isAr ? "Arabic (clear Egyptian empathetic style)" : "English";
+      const contextualPrompt = [
+        `Language: ${langHint}`,
+        `User Role: ${params.role}`,
+        `Lesson / Context: ${params.subject}`,
+        `Verified 15-min Rescue Focus: ${knapsackSummary}`,
+        "",
+        "Question / Request:",
+        params.prompt,
+        "",
+        "Respond warmly with numbered steps and a concise rule takeaway.",
+      ].join("\n");
 
+      const historyMessages: DirectChatMessage[] = params.history
+        .slice(1)
+        .slice(-6)
+        .map((m) => ({
+          role: m.fromUser ? "user" : "assistant",
+          content: String(m.text ?? "").slice(0, 600),
+        }));
+
+      const directRes = await directBrowserAi.chat({
+        messages: [...historyMessages, { role: "user", content: contextualPrompt }],
+        systemPrompt: localPlan.systemPrompt,
+        temperature: 0.55,
+        onChunk: (accumulated) => params.onChunk(accumulated),
+      });
+      const cleanFinal = sanitizeDirectOutput(directRes.text);
+      const enrichedMeta: CognitiveMeta = { ...localPlan.meta, ttftMs: directRes.ttftMs };
+      params.onMeta?.(enrichedMeta);
+      params.onChunk(cleanFinal);
+      return { text: cleanFinal, meta: enrichedMeta };
+    }
+
+    if (!res) {
+      throw new Error("Study helper backend unreachable.");
+    }
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
       throw new Error((errBody as { error?: string }).error || `Assistant error (${res.status})`);
@@ -284,7 +270,7 @@ export const AiToolkitClient = {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n\n");
+      const lines = buffer.split(/\r?\n\r?\n/);
       buffer = lines.pop() ?? "";
       for (const line of lines) {
         const clean = line.replace(/^data:\s*/, "").trim();
@@ -292,11 +278,15 @@ export const AiToolkitClient = {
         const parsed = JSON.parse(clean) as {
           meta?: CognitiveMeta;
           chunk?: string;
+          reset?: boolean;
           error?: string;
           done?: boolean;
           ttftMs?: number;
         };
         if (parsed.error) throw new Error(parsed.error);
+        if (parsed.reset) {
+          accumulated = "";
+        }
         if (parsed.meta) {
           serverMeta = parsed.meta;
           params.onMeta?.(parsed.meta);

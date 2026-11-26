@@ -202,3 +202,44 @@ test("CognitiveMemoryVault enforces ownership, scrubs PII, and locks telemetry s
   assert.equal(adminView.stats.totalRecords, 1);
   assert.equal(adminView.records[0].sanitizedPromptExcerpt.includes("01099887766"), false);
 });
+
+test("streaming handles application/json upstream fallback and invokes onResetStream on failover", async () => {
+  let callCount = 0;
+  let resetCount = 0;
+  const chunks: string[] = [];
+
+  const router = new KashkoolAiRouter(
+    {},
+    {
+      baseRetryDelayMs: 1,
+      fetchImpl: async () => {
+        callCount++;
+        if (callCount === 1) {
+          return new Response("upstream error", { status: 503 });
+        }
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "الحل النهائي: ٢ + ٢ = ٤" } }],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      },
+    }
+  );
+
+  const res = await router.chat({
+    messages: [{ role: "user", content: "احسب ٢ + ٢" }],
+    onResetStream: () => {
+      resetCount++;
+      chunks.length = 0;
+    },
+    onChunk: (c) => chunks.push(c),
+  });
+
+  assert.equal(res.failoverOccurred, true);
+  assert.ok(resetCount >= 1);
+  assert.equal(chunks.join(""), "الحل النهائي: ٢ + ٢ = ٤");
+});

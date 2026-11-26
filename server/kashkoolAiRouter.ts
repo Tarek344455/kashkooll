@@ -537,6 +537,7 @@ export interface KashkoolChatOptions {
   temperature?: number;
   maxTokens?: number;
   onChunk?: (chunk: string) => void;
+  onResetStream?: () => void;
 }
 
 export interface KashkoolChatResult {
@@ -1213,6 +1214,9 @@ export class KashkoolAiRouter {
           }
 
           attemptsCount++;
+          if (attemptsCount > 1 && options.onChunk) {
+            options.onResetStream?.();
+          }
           const startedAt = Date.now();
           let firstTokenAt: number | null = null;
           try {
@@ -1316,10 +1320,15 @@ export class KashkoolAiRouter {
       throw new Error(`HTTP ${resp.status} from ${provider.id}: ${rawBody.slice(0, 200)}`);
     }
 
-    const parsed = JSON.parse(rawBody) as {
-      choices?: Array<{ message?: { content?: string | null } }>;
+    let parsed: {
+      choices?: Array<{ message?: { content?: string | null }; text?: string | null }>;
     };
-    return parsed.choices?.[0]?.message?.content ?? "";
+    try {
+      parsed = JSON.parse(rawBody) as typeof parsed;
+    } catch {
+      throw new Error(`Invalid JSON from ${provider.id}: ${rawBody.slice(0, 120)}`);
+    }
+    return parsed.choices?.[0]?.message?.content ?? parsed.choices?.[0]?.text ?? "";
   }
 
   private async executeStreamingRequest(
@@ -1356,6 +1365,17 @@ export class KashkoolAiRouter {
       if (!resp.ok) {
         const errText = await resp.text().catch(() => "");
         throw new Error(`HTTP ${resp.status} from ${provider.id}: ${errText.slice(0, 200)}`);
+      }
+
+      const contentType = resp.headers.get("content-type")?.toLowerCase() ?? "";
+      if (contentType.includes("application/json")) {
+        const rawJson = await resp.text();
+        const parsed = JSON.parse(rawJson) as {
+          choices?: Array<{ message?: { content?: string | null }; text?: string | null }>;
+        };
+        const text = parsed.choices?.[0]?.message?.content ?? parsed.choices?.[0]?.text ?? "";
+        if (text) onChunk(text);
+        return text;
       }
 
       if (!resp.body) {
