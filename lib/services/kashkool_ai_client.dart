@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../core/config/app_config.dart';
 import '../core/models/kashkool_models.dart';
 
 class KashkoolAiResponse {
@@ -113,6 +114,26 @@ class KashkoolAiClient {
         : 'You are Kashkool Egyptian study mentor. Subject: $subject. Explain clearly in numbered steps.';
 
     final endpoints = <Map<String, String>>[
+      if (AppConfig.omnirouteBaseUrl.trim().isNotEmpty)
+        {
+          'url':
+              '${AppConfig.omnirouteBaseUrl.trim().replaceAll(RegExp(r'/+$'), '')}/chat/completions',
+          'model': 'auto',
+          if (AppConfig.omnirouteApiKey.trim().isNotEmpty)
+            'key': AppConfig.omnirouteApiKey.trim(),
+        },
+      if (AppConfig.groqApiKey.trim().isNotEmpty)
+        {
+          'url': 'https://api.groq.com/openai/v1/chat/completions',
+          'model': 'llama-3.3-70b-versatile',
+          'key': AppConfig.groqApiKey.trim(),
+        },
+      if (AppConfig.deepseekApiKey.trim().isNotEmpty)
+        {
+          'url': 'https://api.deepseek.com/v1/chat/completions',
+          'model': 'deepseek-chat',
+          'key': AppConfig.deepseekApiKey.trim(),
+        },
       {
         'url': 'https://ai-gateway.kilo.ai/api/v1/chat/completions',
         'model': 'nvidia/nemotron-3.5-lightning:free',
@@ -126,10 +147,14 @@ class KashkoolAiClient {
     final started = DateTime.now();
     for (final ep in endpoints) {
       try {
+        final headers = <String, String>{'Content-Type': 'application/json'};
+        if (ep['key'] != null && ep['key']!.isNotEmpty) {
+          headers['Authorization'] = 'Bearer ${ep['key']}';
+        }
         final resp = await http
             .post(
               Uri.parse(ep['url']!),
-              headers: {'Content-Type': 'application/json'},
+              headers: headers,
               body: jsonEncode({
                 'model': ep['model'],
                 'messages': [

@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'core/config/app_config.dart';
 import 'core/models/kashkool_models.dart';
 import 'screens/login_screen.dart';
 import 'screens/workspace_shell.dart';
 import 'state/kashkool_controller.dart';
 import 'ui/space_glass.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (AppConfig.isSupabaseConfigured) {
+    await Supabase.initialize(
+      url: AppConfig.supabaseUrl,
+      anonKey: AppConfig.supabaseAnonKey,
+    );
+  }
   runApp(const KashkoolApp());
 }
 
