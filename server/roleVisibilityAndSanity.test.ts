@@ -9,6 +9,11 @@ import {
   resolveSafeDestination,
 } from "../src/core/security/roleAccessGuard";
 import { t } from "../src/core/l10n/appStrings";
+import {
+  LAUNCH_ACCOUNTS,
+  authenticateByActivationCode,
+  authenticateLaunchAccount,
+} from "../src/data/accounts";
 import { AppDestination, AppLanguage, UserRole } from "../src/types/kashkool";
 
 test("RoleAccessGuard: strict route isolation across all 4 roles", () => {
@@ -79,4 +84,15 @@ test("Localization & Semantic Sanity: core keys exist in AR & EN with zero place
     assert.equal(/\b(TODO|FIXME|undefined|null|NaN)\b/i.test(ar), false);
     assert.equal(/\b(TODO|FIXME|undefined|null|NaN)\b/i.test(en), false);
   }
+});
+
+test("Launch Accounts: every role has a verified account and rejects invalid credentials", () => {
+  for (const role of Object.values(UserRole)) {
+    const acc = LAUNCH_ACCOUNTS.find((a) => a.role === role);
+    assert.ok(acc, `Missing launch account for role ${role}`);
+    assert.equal(authenticateLaunchAccount(acc.email, acc.password)?.id, acc.id);
+    assert.equal(authenticateByActivationCode(acc.activationCode)?.role, role);
+    assert.equal(authenticateLaunchAccount(acc.email, "wrong-password"), null);
+  }
+  assert.equal(authenticateByActivationCode("FAKE999"), null);
 });

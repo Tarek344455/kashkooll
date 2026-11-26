@@ -41,7 +41,6 @@ export const WorkspaceShell: React.FC<{
     snackbarMessage,
     clearSnackbar,
     toggleLanguage,
-    switchRole,
     signOut,
     syncNow,
     tr,
@@ -65,14 +64,6 @@ export const WorkspaceShell: React.FC<{
     [UserRole.SECRETARY]: tr("role_secretary"),
     [UserRole.TEACHER]: tr("role_teacher"),
     [UserRole.PARENT]: tr("role_parent"),
-  };
-
-  const handleRoleSwitch = (nextRole: UserRole) => {
-    switchRole(nextRole);
-    const allowed = destinationsForRole(nextRole);
-    if (!allowed.includes(destination)) {
-      onNavigate("home");
-    }
   };
 
   return (
@@ -116,19 +107,6 @@ export const WorkspaceShell: React.FC<{
                   : tr("synced_all")}
               </span>
             </button>
-
-            {/* Quick Role Switcher */}
-            <select
-              aria-label="Switch Role"
-              value={activeRole}
-              onChange={(e) => handleRoleSwitch(e.target.value as UserRole)}
-              className="rounded-xl bg-[#141D2F] border border-white/15 px-2.5 py-1.5 text-xs font-semibold text-[#F1F5F9] focus:outline-none focus:border-[#38BDF8] cursor-pointer"
-            >
-              <option value={UserRole.STUDENT}>{tr("role_student")}</option>
-              <option value={UserRole.SECRETARY}>{tr("role_secretary")}</option>
-              <option value={UserRole.TEACHER}>{tr("role_teacher")}</option>
-              <option value={UserRole.PARENT}>{tr("role_parent")}</option>
-            </select>
 
             <CosmicButton
               type="button"

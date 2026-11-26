@@ -66,6 +66,11 @@ import {
   seedStudents,
 } from "../data/seeds";
 import { centerPlans, coursesCatalog, quizCatalog } from "../data/catalog";
+import {
+  authenticateByActivationCode,
+  authenticateLaunchAccount,
+  findAccountByIdentifier,
+} from "../data/accounts";
 import { t, ledgerKindLabel } from "../core/l10n/appStrings";
 import { DynamicQrEngine, EgyptValidators } from "../core/utils/egyptValidators";
 import { OperationsResearchEngine } from "../core/or/operationsResearchEngine";
@@ -288,6 +293,7 @@ export interface KashkoolContextValue {
   clearSnackbar: () => void;
   toggleLanguage: () => void;
   setAuthMode: (mode: AuthMode) => void;
+  signInWithPassword: (email: string, password: string) => void;
   requestOtp: (input: string) => void;
   verifyOtp: (code: string) => void;
   activateWithQr: (code: string) => void;
@@ -747,6 +753,48 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setAuth({ mode, awaitingOtp: false, identifier: "", busy: false, errorMessage: null });
   }, []);
 
+  const signInWithPassword = useCallback(
+    (email: string, password: string) => {
+      const cleanEmail = email.trim().toLowerCase();
+      if (!cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+        setAuth((a) => ({ ...a, errorMessage: t("err_invalid_email", persisted.language) }));
+        return;
+      }
+      if (!password.trim()) {
+        setAuth((a) => ({
+          ...a,
+          errorMessage:
+            persisted.language === AppLanguage.AR
+              ? "من فضلك اكتب كلمة المرور."
+              : "Please enter your password.",
+        }));
+        return;
+      }
+
+      const acc = authenticateLaunchAccount(cleanEmail, password);
+      if (!acc) {
+        setAuth((a) => ({
+          ...a,
+          errorMessage:
+            persisted.language === AppLanguage.AR
+              ? "البريد الإلكتروني أو كلمة المرور غير صحيحة."
+              : "Invalid email or password.",
+        }));
+        return;
+      }
+
+      setPersisted((p) => ({
+        ...p,
+        signedIn: true,
+        activeRole: acc.role,
+        userLabel: `${persisted.language === AppLanguage.AR ? acc.nameAr : acc.nameEn} · QR:${acc.activationCode}`,
+        linkedParentStudentId: acc.linkedStudentId ?? p.linkedParentStudentId,
+      }));
+      setAuth({ mode: AuthMode.EMAIL, awaitingOtp: false, identifier: "", busy: false, errorMessage: null });
+    },
+    [persisted.language]
+  );
+
   const requestOtp = useCallback(
     (input: string) => {
       const trimmed = input.trim();
@@ -756,14 +804,25 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setAuth((a) => ({ ...a, errorMessage: t("err_invalid_phone", persisted.language) }));
           return;
         }
+        const registered = findAccountByIdentifier(norm);
+        if (!supabaseConfigured && !registered) {
+          setAuth((a) => ({
+            ...a,
+            errorMessage:
+              persisted.language === AppLanguage.AR
+                ? "رقم الموبايل ده غير مسجل في السنتر."
+                : "This mobile number is not registered.",
+          }));
+          return;
+        }
         setAuth((a) => ({ ...a, awaitingOtp: true, identifier: norm, errorMessage: null }));
         if (supabaseConfigured) {
           void requestSupabasePhoneOtp(norm);
-        } else {
+        } else if (registered) {
           setSnackbarMessage(
             persisted.language === AppLanguage.AR
-              ? "استخدم أي 6 أرقام للمعاينة المحلية أو كود التفعيل"
-              : "Enter any 6-digit code in local mode"
+              ? `تم التحقق من الرقم — أدخل كود التفعيل (${registered.activationCode}) أو كلمة المرور.`
+              : `Number verified — enter your activation code or PIN.`
           );
         }
       } else if (auth.mode === AuthMode.EMAIL) {
@@ -784,7 +843,7 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const verifyOtp = useCallback(
     (code: string) => {
       const cleanCode = code.trim();
-      if (cleanCode.length !== 6) {
+      if (cleanCode.length < 6) {
         setAuth((a) => ({ ...a, errorMessage: t("err_invalid_code", persisted.language) }));
         return;
       }
@@ -797,13 +856,17 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             : verifySupabasePhoneOtp(auth.identifier, cleanCode);
         void verifyPromise.then((res) => {
           if (res.ok) {
+            const matched = findAccountByIdentifier(auth.identifier);
             setPersisted((p) => ({
               ...p,
               signedIn: true,
-              activeRole: UserRole.STUDENT,
-              userLabel: auth.identifier || "+201012345678",
+              activeRole: matched?.role ?? UserRole.STUDENT,
+              userLabel: matched
+                ? `${persisted.language === AppLanguage.AR ? matched.nameAr : matched.nameEn} · QR:${matched.activationCode}`
+                : auth.identifier,
+              linkedParentStudentId: matched?.linkedStudentId ?? p.linkedParentStudentId,
             }));
-            setAuth({ mode: AuthMode.QR, awaitingOtp: false, identifier: "", busy: false, errorMessage: null });
+            setAuth({ mode: AuthMode.EMAIL, awaitingOtp: false, identifier: "", busy: false, errorMessage: null });
           } else {
             setAuth((a) => ({
               ...a,
@@ -815,13 +878,25 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return;
       }
 
+      const matched = findAccountByIdentifier(auth.identifier);
+      if (
+        !matched ||
+        (cleanCode.toUpperCase() !== matched.activationCode.toUpperCase() &&
+          cleanCode !== matched.password &&
+          cleanCode !== matched.phone.slice(-6))
+      ) {
+        setAuth((a) => ({ ...a, errorMessage: t("err_invalid_code", persisted.language) }));
+        return;
+      }
+
       setPersisted((p) => ({
         ...p,
         signedIn: true,
-        activeRole: UserRole.STUDENT,
-        userLabel: auth.identifier || "+201012345678",
+        activeRole: matched.role,
+        userLabel: `${persisted.language === AppLanguage.AR ? matched.nameAr : matched.nameEn} · QR:${matched.activationCode}`,
+        linkedParentStudentId: matched.linkedStudentId ?? p.linkedParentStudentId,
       }));
-      setAuth({ mode: AuthMode.QR, awaitingOtp: false, identifier: "", busy: false, errorMessage: null });
+      setAuth({ mode: AuthMode.EMAIL, awaitingOtp: false, identifier: "", busy: false, errorMessage: null });
     },
     [auth.identifier, auth.mode, persisted.language, supabaseConfigured]
   );
@@ -833,14 +908,46 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return;
       }
       const norm = EgyptValidators.normalizeQrCode(code);
-      setPersisted((p) => {
-        const matched = p.students.find((s) => s.qrActivationCode?.toUpperCase() === norm);
-        const label = matched ? `${matched.nameAr} · QR:${norm}` : `QR:${norm}`;
-        return { ...p, signedIn: true, activeRole: UserRole.STUDENT, userLabel: label };
-      });
-      setAuth({ mode: AuthMode.QR, awaitingOtp: false, identifier: "", busy: false, errorMessage: null });
+      const launchAcc = authenticateByActivationCode(norm);
+      const studentMatch = persisted.students.find((s) => s.qrActivationCode?.toUpperCase() === norm);
+      const parentStudentMatch = persisted.students.find((s) => s.parentInviteCode?.toUpperCase() === norm);
+
+      if (!launchAcc && !studentMatch && !parentStudentMatch) {
+        setAuth((a) => ({
+          ...a,
+          errorMessage:
+            persisted.language === AppLanguage.AR
+              ? "كود التفعيل غير مسجل في النظام."
+              : "Activation code is not registered.",
+        }));
+        return;
+      }
+
+      const role = launchAcc?.role ?? (parentStudentMatch ? UserRole.PARENT : UserRole.STUDENT);
+      const labelName = launchAcc
+        ? persisted.language === AppLanguage.AR
+          ? launchAcc.nameAr
+          : launchAcc.nameEn
+        : studentMatch
+          ? persisted.language === AppLanguage.AR
+            ? studentMatch.nameAr
+            : studentMatch.nameEn
+          : parentStudentMatch
+            ? `${persisted.language === AppLanguage.AR ? "ولي أمر" : "Parent"} · ${
+                persisted.language === AppLanguage.AR ? parentStudentMatch.nameAr : parentStudentMatch.nameEn
+              }`
+            : norm;
+
+      setPersisted((p) => ({
+        ...p,
+        signedIn: true,
+        activeRole: role,
+        userLabel: `${labelName} · QR:${norm}`,
+        linkedParentStudentId: launchAcc?.linkedStudentId ?? parentStudentMatch?.id ?? p.linkedParentStudentId,
+      }));
+      setAuth({ mode: AuthMode.EMAIL, awaitingOtp: false, identifier: "", busy: false, errorMessage: null });
     },
-    [persisted.language]
+    [persisted.language, persisted.students]
   );
 
   const enterOfflineWorkspace = useCallback((role: UserRole) => {
@@ -2675,6 +2782,7 @@ export const KashkoolProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     clearSnackbar,
     toggleLanguage,
     setAuthMode,
+    signInWithPassword,
     requestOtp,
     verifyOtp,
     activateWithQr,
