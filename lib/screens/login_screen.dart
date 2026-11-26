@@ -81,9 +81,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                               Text(
                                 c.tr('app_title'),
                                 style: const TextStyle(
@@ -99,7 +100,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   color: KashkoolColors.textSecondary,
                                 ),
                               ),
-                            ],
+                              ],
+                            ),
                           ),
                         ],
                       ),
